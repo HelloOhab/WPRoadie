@@ -5,6 +5,9 @@
 	<file>.</file>
 	<exclude-pattern>/vendor/*</exclude-pattern>
 	<exclude-pattern>/node_modules/*</exclude-pattern>
+	<exclude-pattern>/admin/build/*</exclude-pattern>
+	<exclude-pattern>/dist/*</exclude-pattern>
+	<exclude-pattern>/cli/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg value="sp"/>

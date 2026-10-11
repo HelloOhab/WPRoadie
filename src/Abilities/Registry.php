@@ -175,8 +175,12 @@ final class Registry {
 		);
 	}
 
+	/**
+	 * Ability category slug for a group. Category slugs allow only
+	 * lowercase letters, digits and dashes.
+	 */
 	public static function category( string $group ): string {
-		return 'wproadie-' . $group;
+		return 'wproadie-' . str_replace( '_', '-', $group );
 	}
 
 	/**

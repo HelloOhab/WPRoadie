@@ -441,8 +441,6 @@ final class Guardrails {
 		'theme list',
 		'theme get',
 		'theme status',
-		'user list',
-		'user get',
 		'role list',
 		'cap list',
 		'post list',
@@ -459,7 +457,6 @@ final class Guardrails {
 		'widget list',
 		'sidebar list',
 		'option get',
-		'option list',
 		'media regenerate',
 		'media image-size',
 		'db check',
@@ -469,7 +466,6 @@ final class Guardrails {
 		'language core list',
 		'language plugin list',
 		'language theme list',
-		'site option get',
 		'maintenance-mode status',
 	);
 
@@ -596,9 +592,28 @@ final class Guardrails {
 		}
 
 		// search-replace rewrites the database wholesale; only previews are
-		// allowed. Use the database write tool for targeted changes.
-		if ( 'search-replace' === $words[0] && ! in_array( '--dry-run', $args, true ) && ! apply_filters( 'wproadie_allow_search_replace', false ) ) {
-			return self::cli_error( __( 'search-replace is only allowed with --dry-run.', 'wproadie' ) );
+		// allowed. Use the database write tool for targeted changes. A later
+		// --no-dry-run or --dry-run=<value> would override the preview.
+		if ( 'search-replace' === $words[0] && ! apply_filters( 'wproadie_allow_search_replace', false ) ) {
+			$overrides = preg_grep( '/^--(no-dry-run|dry-run=)/i', $args );
+			if ( ! in_array( '--dry-run', $args, true ) || $overrides ) {
+				return self::cli_error( __( 'search-replace is only allowed with --dry-run.', 'wproadie' ) );
+			}
+		}
+
+		// Options can hold secrets (salts, API keys): only the same
+		// allow-list the settings tools read is available here.
+		if ( array( 'option', 'get' ) === array_slice( $words, 0, 2 ) ) {
+			$name = $words[2] ?? '';
+			if ( ! self::can_read_option( $name ) || count( $words ) > 3 ) {
+				return self::cli_error( __( 'option get only works for the options the settings tools may read (see get-options).', 'wproadie' ) );
+			}
+		}
+
+		// Running every cron hook at once is a blunt instrument; name the
+		// hook or use --due-now.
+		if ( array( 'cron', 'event', 'run' ) === array_slice( $words, 0, 3 ) && preg_grep( '/^--all$/i', $args ) ) {
+			return self::cli_error( __( 'cron event run --all is not allowed. Name the hook, or use --due-now.', 'wproadie' ) );
 		}
 
 		return true;
@@ -612,31 +627,29 @@ final class Guardrails {
 
 
 	/**
-	 * Checks that SQL is a single read-only statement. This is a first
-	 * line of defence; the database tool also runs reads inside a
-	 * read-only transaction where the server supports it.
+	 * Checks that SQL is a single read-only statement. Works on the lexed
+	 * statement (see lex_sql()), so keywords split by comments or hidden in
+	 * string literals are seen correctly. The database tool also runs reads
+	 * inside a read-only transaction where the server supports it.
 	 *
 	 * @return true|WP_Error
 	 */
 	public static function check_read_query( string $sql ) {
-		if ( false !== strpos( $sql, '/*!' ) ) {
-			// MySQL runs the contents of /*! ... */ comments.
-			return self::sql_error( __( 'Executable comments (/*! ... */) are not allowed.', 'wproadie' ) );
+		$lexed = self::lex_sql( $sql );
+		if ( is_wp_error( $lexed ) ) {
+			return $lexed;
 		}
-		$stripped = self::strip_sql( $sql );
-		if ( '' === $stripped ) {
-			return self::sql_error( __( 'Give a SQL query.', 'wproadie' ) );
-		}
-		if ( false !== strpos( $stripped, ';' ) ) {
-			return self::sql_error( __( 'Only one statement is allowed.', 'wproadie' ) );
-		}
-		if ( ! preg_match( '/^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)\b/i', $stripped ) ) {
+		if ( ! preg_match( '/^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)\b/i', $lexed ) ) {
 			return self::sql_error( __( 'Only SELECT, SHOW, DESCRIBE and EXPLAIN are allowed. Use the database write tool for changes.', 'wproadie' ) );
 		}
-		if ( preg_match( '/\b(INTO\s+(OUTFILE|DUMPFILE)|LOAD_FILE|FOR\s+UPDATE|LOCK\s+IN\s+SHARE\s+MODE|SLEEP|BENCHMARK|GET_LOCK)\b/i', $sql ) ) {
-			return self::sql_error( __( 'That query uses a function or clause that is not allowed.', 'wproadie' ) );
+		if ( preg_match( '/\bFOR\s+(UPDATE|SHARE)\b|\bLOCK\s+IN\s+SHARE\s+MODE\b/i', $lexed ) ) {
+			return self::sql_error( __( 'Locking reads are not allowed.', 'wproadie' ) );
 		}
-		return true;
+		// EXPLAIN ANALYZE executes the statement it explains.
+		if ( preg_match( '/^(EXPLAIN|DESCRIBE|DESC)\b/i', $lexed ) && preg_match( '/\bANALYZE\b/i', $lexed ) && preg_match( '/\b(INSERT|UPDATE|DELETE|REPLACE)\b/i', $lexed ) ) {
+			return self::sql_error( __( 'EXPLAIN ANALYZE runs the statement; it is only allowed for SELECT.', 'wproadie' ) );
+		}
+		return self::check_sql_common( $lexed );
 	}
 
 	/**
@@ -646,39 +659,112 @@ final class Guardrails {
 	 * @return true|WP_Error
 	 */
 	public static function check_write_query( string $sql ) {
-		if ( false !== strpos( $sql, '/*!' ) ) {
-			return self::sql_error( __( 'Executable comments (/*! ... */) are not allowed.', 'wproadie' ) );
+		$lexed = self::lex_sql( $sql );
+		if ( is_wp_error( $lexed ) ) {
+			return $lexed;
 		}
-		$stripped = self::strip_sql( $sql );
-		if ( '' === $stripped ) {
-			return self::sql_error( __( 'Give a SQL query.', 'wproadie' ) );
-		}
-		if ( false !== strpos( $stripped, ';' ) ) {
-			return self::sql_error( __( 'Only one statement is allowed.', 'wproadie' ) );
-		}
-		if ( ! preg_match( '/^(INSERT|UPDATE|DELETE|REPLACE)\b/i', $stripped ) ) {
+		if ( ! preg_match( '/^(INSERT|UPDATE|DELETE|REPLACE)\b/i', $lexed ) ) {
 			return self::sql_error( __( 'Only INSERT, UPDATE, DELETE and REPLACE are allowed. Schema changes (CREATE, ALTER, DROP, TRUNCATE) are not.', 'wproadie' ) );
 		}
-		if ( preg_match( '/^(UPDATE|DELETE)\b/i', $stripped ) && ! preg_match( '/\bWHERE\b/i', $stripped ) ) {
+		// The word WHERE inside a string or comment does not count.
+		if ( preg_match( '/^(UPDATE|DELETE)\b/i', $lexed ) && ! preg_match( '/\bWHERE\b/i', $lexed ) ) {
 			return self::sql_error( __( 'UPDATE and DELETE need a WHERE clause.', 'wproadie' ) );
 		}
-		if ( preg_match( '/\b(INTO\s+(OUTFILE|DUMPFILE)|LOAD_FILE|LOAD\s+DATA|SLEEP|BENCHMARK)\b/i', $sql ) ) {
+		return self::check_sql_common( $lexed );
+	}
+
+	/**
+	 * @param string $lexed Output of lex_sql().
+	 * @return true|WP_Error
+	 */
+	private static function check_sql_common( string $lexed ) {
+		if ( preg_match( '/\bINTO\s+(OUTFILE|DUMPFILE)\b|\bLOAD\s+DATA\b|\b(LOAD_FILE|SLEEP|BENCHMARK|GET_LOCK)\s*\(/i', $lexed ) ) {
 			return self::sql_error( __( 'That query uses a function or clause that is not allowed.', 'wproadie' ) );
 		}
 		return true;
 	}
 
 	/**
-	 * Removes comments and a trailing semicolon, for the statement checks.
-	 * A semicolon inside a string literal is still rejected by the
-	 * single-statement check: a false positive, on the safe side.
+	 * Reduces a statement to its structure: comments become a space,
+	 * string literals become '' and quoted identifiers become `x`, so
+	 * keyword checks cannot be fooled by either. Refuses executable
+	 * comments (MySQL "/*!", MariaDB "/*M!"), unterminated strings or
+	 * comments, and more than one statement. Assumes backslash escapes,
+	 * which WordPress's own escaping also relies on.
+	 *
+	 * @return string|WP_Error
 	 */
-	private static function strip_sql( string $sql ): string {
-		// Comments can hide a second statement from a naive check.
-		$sql = preg_replace( '#/\*.*?\*/#s', ' ', $sql );
-		$sql = preg_replace( '/(--\s|#)[^\n]*/', ' ', (string) $sql );
-		$sql = trim( (string) $sql );
-		return rtrim( $sql, "; \t\n\r" );
+	public static function lex_sql( string $sql ) {
+		$out    = '';
+		$length = strlen( $sql );
+		$i      = 0;
+		while ( $i < $length ) {
+			$char = $sql[ $i ];
+			$next = $i + 1 < $length ? $sql[ $i + 1 ] : '';
+
+			if ( "'" === $char || '"' === $char || '`' === $char ) {
+				$end = self::closing_quote( $sql, $i, $char );
+				if ( null === $end ) {
+					return self::sql_error( __( 'Unterminated string or identifier.', 'wproadie' ) );
+				}
+				$out .= '`' === $char ? '`x`' : "''";
+				$i    = $end + 1;
+				continue;
+			}
+			if ( '/' === $char && '*' === $next ) {
+				$rest = substr( $sql, $i + 2, 2 );
+				if ( '!' === substr( $rest, 0, 1 ) || 'm!' === strtolower( $rest ) ) {
+					return self::sql_error( __( 'Executable comments (/*! ... */, /*M! ... */) are not allowed.', 'wproadie' ) );
+				}
+				$end = strpos( $sql, '*/', $i + 2 );
+				if ( false === $end ) {
+					return self::sql_error( __( 'Unterminated comment.', 'wproadie' ) );
+				}
+				$out .= ' ';
+				$i    = $end + 2;
+				continue;
+			}
+			$dash_comment = '-' === $char && '-' === $next && ( $i + 2 >= $length || ctype_space( $sql[ $i + 2 ] ) );
+			if ( '#' === $char || $dash_comment ) {
+				$end  = strpos( $sql, "\n", $i );
+				$out .= ' ';
+				$i    = false === $end ? $length : $end + 1;
+				continue;
+			}
+			$out .= $char;
+			++$i;
+		}
+
+		$out = rtrim( trim( $out ), "; \t\n\r" );
+		if ( '' === $out ) {
+			return self::sql_error( __( 'Give a SQL query.', 'wproadie' ) );
+		}
+		if ( false !== strpos( $out, ';' ) ) {
+			return self::sql_error( __( 'Only one statement is allowed.', 'wproadie' ) );
+		}
+		return $out;
+	}
+
+	/**
+	 * Position of the quote that closes the one at $start, or null.
+	 * Handles backslash escapes (not in identifiers) and doubled quotes.
+	 */
+	private static function closing_quote( string $sql, int $start, string $quote ): ?int {
+		$length = strlen( $sql );
+		for ( $i = $start + 1; $i < $length; $i++ ) {
+			if ( '\\' === $sql[ $i ] && '`' !== $quote ) {
+				++$i;
+				continue;
+			}
+			if ( $sql[ $i ] === $quote ) {
+				if ( $i + 1 < $length && $sql[ $i + 1 ] === $quote ) {
+					++$i;
+					continue;
+				}
+				return $i;
+			}
+		}
+		return null;
 	}
 
 	private static function sql_error( string $message ): WP_Error {

@@ -61,4 +61,6 @@ fi
 
 wp plugin activate mcp-adapter wproadie
 wp wproadie grant admin
+# A test site runs every tool, including the groups that are off by default.
+wp eval 'foreach ( array_keys( WPRoadie\Safety\Settings::GROUPS ) as $g ) { WPRoadie\Safety\Settings::set_group( $g, true ); }'
 wp wproadie status

@@ -95,6 +95,16 @@ function wproadie_assert_error( $result, ?string $code = null ): void {
 	}
 }
 
+// Test runs make many calls in a minute; the rate-limit test opts back in.
+$GLOBALS['wproadie_test_rate_limit'] = false;
+add_filter(
+	'wproadie_rate_limit',
+	static function ( $limit ) {
+		return $GLOBALS['wproadie_test_rate_limit'] ? $limit : 0;
+	},
+	1
+);
+
 if ( ! WPRoadie\Server\Permission::can_connect() ) {
 	WP_CLI::error( 'Run as an administrator with WPRoadie access, e.g. --user=admin (and `wp wproadie grant admin`).' );
 }

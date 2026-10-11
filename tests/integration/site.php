@@ -64,11 +64,13 @@ wproadie_test(
 	'rate limit refuses calls over the limit',
 	function () {
 		Settings::set( 'rate_limit', 1 );
+		$GLOBALS['wproadie_test_rate_limit'] = true;
 		try {
 			// The window may already have calls in it; two more must hit it.
 			wproadie_call( 'versions' );
 			wproadie_assert_error( wproadie_call( 'versions' ), 'wproadie_rate_limited' );
 		} finally {
+			$GLOBALS['wproadie_test_rate_limit'] = false;
 			Settings::set( 'rate_limit', WPRoadie\Safety\RateLimit::DEFAULT_PER_MINUTE );
 			$window = (int) floor( time() / MINUTE_IN_SECONDS );
 			delete_transient( 'wproadie_rl_' . get_current_user_id() . '_' . $window );
@@ -175,5 +177,44 @@ wproadie_test(
 			wproadie_assert( ! Guardrails::is_public_url( $url ), $url . ' should be refused' );
 		}
 		wproadie_assert( Guardrails::is_public_url( 'https://8.8.8.8/' ), 'A public IP should be allowed' );
+	}
+);
+
+wproadie_test(
+	'SQL guard bypasses found in review stay closed',
+	function () {
+		$reads = array(
+			"SELECT * FROM wp_users INTO/**/OUTFILE '/tmp/x'",
+			"SELECT 1 INTO#c\nOUTFILE '/tmp/x'",
+			'SELECT * FROM wp_posts FOR/**/UPDATE',
+			'SELECT * FROM wp_posts FOR SHARE',
+			"SELECT '/*' INTO OUTFILE '/tmp/x' -- */'",
+			'/*M!DELETE FROM wp_posts WHERE 1=1 OR EXISTS (*/SELECT 1)',
+			'EXPLAIN ANALYZE DELETE FROM wp_posts WHERE ID = 1',
+			"SELECT '/*'; DELETE FROM wp_posts; -- */'",
+		);
+		foreach ( $reads as $sql ) {
+			wproadie_assert( is_wp_error( Guardrails::check_read_query( $sql ) ), 'Should refuse: ' . $sql );
+		}
+		wproadie_assert( is_wp_error( Guardrails::check_write_query( "UPDATE wp_posts SET post_title = 'WHERE'" ) ), 'WHERE in a string must not count' );
+		wproadie_assert_same( true, Guardrails::check_read_query( "SELECT ID FROM wp_posts WHERE post_title = 'it''s; fine -- ok'" ) );
+	}
+);
+
+wproadie_test(
+	'WP-CLI guard bypasses found in review stay closed',
+	function () {
+		$refused = function ( $command ) {
+			$args = Guardrails::split_command( $command );
+			return is_wp_error( $args ) || is_wp_error( Guardrails::check_cli( $args ) );
+		};
+		wproadie_assert( $refused( 'search-replace a b --dry-run --no-dry-run' ) );
+		wproadie_assert( $refused( 'search-replace a b --dry-run=false' ) );
+		wproadie_assert( $refused( 'option get auth_key' ) );
+		wproadie_assert( $refused( 'option list' ) );
+		wproadie_assert( $refused( 'user list --fields=user_pass' ) );
+		wproadie_assert( $refused( 'cron event run --all' ) );
+		wproadie_assert( ! $refused( 'option get blogname' ) );
+		wproadie_assert( ! $refused( 'cron event run --due-now' ) );
 	}
 );

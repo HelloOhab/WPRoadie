@@ -18,6 +18,8 @@
 namespace WPRoadie\Log;
 
 use WP_Error;
+use WPRoadie\Abilities\Extensions\Installer;
+use WPRoadie\Abilities\Files\FileTools;
 use WPRoadie\Safety\Guardrails;
 
 defined( 'ABSPATH' ) || exit;
@@ -426,13 +428,16 @@ final class Undo {
 				if ( empty( $r['existed'] ) ) {
 					if ( file_exists( $path ) ) {
 						wp_delete_file( $path );
+						FileTools::invalidate( $path );
 					}
 					return file_exists( $path ) ? self::fail( __( 'Could not remove the created file.', 'wproadie' ) ) : true;
 				}
 				if ( empty( $r['backup'] ) || ! is_readable( $r['backup'] ) ) {
 					return self::fail( __( 'The file backup is missing.', 'wproadie' ) );
 				}
-				return copy( $r['backup'], $path ) ? true : self::fail( __( 'Could not restore the file from its backup.', 'wproadie' ) );
+				// Atomic, and drops the file from OPcache so restored PHP runs.
+				$restored = FileTools::write_atomic( $path, (string) file_get_contents( $r['backup'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local backup file.
+				return is_wp_error( $restored ) ? $restored : true;
 
 			case 'user_roles':
 				$user = get_userdata( (int) $r['user_id'] );
@@ -457,7 +462,9 @@ final class Undo {
 				require_once ABSPATH . 'wp-admin/includes/plugin.php';
 				$plugin = (string) $r['plugin'];
 				if ( ! empty( $r['active'] ) ) {
-					$activated = activate_plugin( $plugin );
+					// Guarded activation: buffers output and catches errors, so a
+					// noisy plugin cannot corrupt an MCP STDIO stream.
+					$activated = Installer::activate( $plugin );
 					return is_wp_error( $activated ) ? $activated : true;
 				}
 				deactivate_plugins( $plugin );

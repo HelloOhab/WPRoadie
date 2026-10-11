@@ -183,6 +183,14 @@ final class AuditLog {
 		$table = self::table();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE created_at < %s", gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS ) ) );
+
+		// File backups only serve undo for log entries, so they expire with them.
+		$backups = glob( trailingslashit( \WPRoadie\Safety\Guardrails::own_dir() ) . 'backups/*.bak' );
+		foreach ( is_array( $backups ) ? $backups : array() as $file ) {
+			if ( filemtime( $file ) < time() - $days * DAY_IN_SECONDS ) {
+				wp_delete_file( $file );
+			}
+		}
 	}
 
 	/**
