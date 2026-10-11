@@ -1,0 +1,12 @@
+{
+	"name": "wproadie",
+	"private": true,
+	"license": "GPL-2.0-or-later",
+	"scripts": {
+		"env:start": "wp-env start",
+		"env:stop": "wp-env stop"
+	},
+	"devDependencies": {
+		"@wordpress/env": "^10.0.0"
+	}
+}

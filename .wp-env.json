@@ -1,0 +1,17 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/wp-env.json",
+	"core": "WordPress/WordPress#6.9",
+	"phpVersion": "8.2",
+	"plugins": [
+		"https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip",
+		"."
+	],
+	"config": {
+		"WP_ENVIRONMENT_TYPE": "local",
+		"WP_DEBUG": true,
+		"WP_DEBUG_LOG": true
+	},
+	"lifecycleScripts": {
+		"afterStart": "npx wp-env run cli wp wproadie grant admin"
+	}
+}
