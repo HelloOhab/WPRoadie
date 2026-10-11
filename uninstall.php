@@ -28,3 +28,8 @@ foreach ( Permission::granted_users() as $wproadie_user ) {
 
 AuditLog::drop();
 delete_option( Settings::OPTION );
+wp_clear_scheduled_hook( 'wproadie_prune_log' );
+delete_site_transient( 'wproadie_update_release' );
+
+// wp-content/wproadie is left in place: it may hold files the team wrote
+// there on purpose, and file backups someone may still need.

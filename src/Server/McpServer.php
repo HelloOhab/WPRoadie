@@ -58,9 +58,9 @@ final class McpServer {
 			array( \WP\MCP\Transport\HttpTransport::class ),
 			\WP\MCP\Infrastructure\ErrorHandling\ErrorLogMcpErrorHandler::class,
 			null,
-			$this->registry->enabled_names(),
+			$this->registry->enabled_names_of_type( 'tool' ),
 			array(),
-			array(),
+			$this->registry->enabled_names_of_type( 'prompt' ),
 			array( Permission::class, 'check_transport' )
 		);
 

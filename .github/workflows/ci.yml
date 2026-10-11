@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+      - run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+      - if: matrix.php == '8.3'
+        run: composer install --no-interaction --no-progress && vendor/bin/phpcs
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:js
+      - run: npm run build
+
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - php: '7.4'
+            wp: '6.9'
+          - php: '8.3'
+            wp: '6.9'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, sqlite3
+      - run: bash bin/test-site.sh "$RUNNER_TEMP/site" ${{ matrix.wp }}
+      - name: Integration tests
+        run: php "$RUNNER_TEMP/site/wp-cli.phar" --path="$RUNNER_TEMP/site/wordpress" --allow-root eval-file tests/integration/run.php --user=admin
+      - name: MCP smoke test
+        run: WP="php $RUNNER_TEMP/site/wp-cli.phar --path=$RUNNER_TEMP/site/wordpress --allow-root" bash tests/smoke.sh

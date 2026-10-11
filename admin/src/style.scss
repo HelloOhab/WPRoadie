@@ -1,0 +1,91 @@
+.wproadie-app {
+	max-width: 1100px;
+
+	.components-card {
+		margin-bottom: 16px;
+	}
+
+	.components-card h2 {
+		margin: 0;
+		font-size: 1.2em;
+	}
+
+	.wproadie-tabs .components-tab-panel__tabs {
+		margin-bottom: 16px;
+		border-bottom: 1px solid #ddd;
+	}
+
+	.wproadie-status th {
+		width: 200px;
+	}
+
+	.wproadie-inline-form {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		align-items: flex-end;
+		margin: 12px 0;
+	}
+
+	.wproadie-copyable {
+		margin-bottom: 16px;
+
+		h4 {
+			margin: 0 0 4px;
+		}
+
+		pre {
+			background: #f6f7f7;
+			padding: 12px;
+			white-space: pre-wrap;
+			word-break: break-all;
+			margin: 0 0 8px;
+		}
+	}
+
+	.wproadie-tool {
+		display: inline-block;
+		margin: 0 6px 4px 0;
+		padding: 1px 8px;
+		border-radius: 10px;
+		background: #f0f0f1;
+		color: #50575e;
+		font-size: 12px;
+
+		&.is-exposed {
+			background: #e7f5ec;
+			color: #00692f;
+		}
+	}
+
+	.wproadie-risk {
+		font-weight: 600;
+
+		&-admin {
+			color: #996800;
+		}
+
+		&-dangerous {
+			color: #b32d2e;
+		}
+	}
+
+	.wproadie-log tr.is-error td {
+		color: #b32d2e;
+	}
+
+	.wproadie-pager {
+		display: flex;
+		gap: 12px;
+		align-items: center;
+	}
+}
+
+.wproadie-pre {
+	background: #f6f7f7;
+	padding: 12px;
+	max-height: 400px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}

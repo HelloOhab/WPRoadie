@@ -19,47 +19,52 @@ final class Settings {
 	 * abilities are not built yet is listed so the switches are stable.
 	 */
 	const GROUPS = array(
-		'site'       => array(
+		'site'           => array(
 			'risk'    => Mode::RISK_READ,
 			'default' => true,
 		),
-		'content'    => array(
+		'content'        => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
-		'media'      => array(
+		'media'          => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
-		'navigation' => array(
+		'navigation'     => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
-		'settings'   => array(
+		'settings'       => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
-		'extensions' => array(
+		'extensions'     => array(
 			'risk'    => Mode::RISK_ADMIN,
 			'default' => true,
 		),
-		'users'      => array(
+		'users'          => array(
 			'risk'    => Mode::RISK_ADMIN,
 			'default' => false,
 		),
-		'files'      => array(
+		'files'          => array(
 			'risk'    => Mode::RISK_DANGEROUS,
 			'default' => true,
 		),
-		'database'   => array(
+		'database'       => array(
 			'risk'    => Mode::RISK_DANGEROUS,
 			'default' => true,
 		),
-		'cli'        => array(
+		// Separate switch for write queries, per the plan: reads on, writes off.
+		'database_write' => array(
+			'risk'    => Mode::RISK_DANGEROUS,
+			'default' => false,
+		),
+		'cli'            => array(
 			'risk'    => Mode::RISK_DANGEROUS,
 			'default' => true,
 		),
-		'php'        => array(
+		'php'            => array(
 			'risk'    => Mode::RISK_DANGEROUS,
 			'default' => false,
 		),
@@ -67,17 +72,18 @@ final class Settings {
 
 	public static function group_label( string $group ): string {
 		$labels = array(
-			'site'       => __( 'Site info', 'wproadie' ),
-			'content'    => __( 'Content', 'wproadie' ),
-			'media'      => __( 'Media', 'wproadie' ),
-			'navigation' => __( 'Navigation', 'wproadie' ),
-			'settings'   => __( 'Settings', 'wproadie' ),
-			'extensions' => __( 'Plugins & themes', 'wproadie' ),
-			'users'      => __( 'Users', 'wproadie' ),
-			'files'      => __( 'Files', 'wproadie' ),
-			'database'   => __( 'Database', 'wproadie' ),
-			'cli'        => __( 'WP-CLI', 'wproadie' ),
-			'php'        => __( 'PHP', 'wproadie' ),
+			'site'           => __( 'Site info', 'wproadie' ),
+			'content'        => __( 'Content', 'wproadie' ),
+			'media'          => __( 'Media', 'wproadie' ),
+			'navigation'     => __( 'Navigation', 'wproadie' ),
+			'settings'       => __( 'Settings', 'wproadie' ),
+			'extensions'     => __( 'Plugins & themes', 'wproadie' ),
+			'users'          => __( 'Users', 'wproadie' ),
+			'files'          => __( 'Files', 'wproadie' ),
+			'database'       => __( 'Database (read)', 'wproadie' ),
+			'database_write' => __( 'Database (write)', 'wproadie' ),
+			'cli'            => __( 'WP-CLI', 'wproadie' ),
+			'php'            => __( 'PHP', 'wproadie' ),
 		);
 		return $labels[ $group ] ?? $group;
 	}
@@ -88,9 +94,11 @@ final class Settings {
 			$groups[ $group ] = $config['default'];
 		}
 		return array(
-			'mode'     => '', // Empty means detect from the environment type.
-			'groups'   => $groups,
-			'disabled' => false,
+			'mode'       => '', // Empty means detect from the environment type.
+			'groups'     => $groups,
+			'disabled'   => false,
+			'stealth'    => false,
+			'rate_limit' => RateLimit::DEFAULT_PER_MINUTE,
 		);
 	}
 

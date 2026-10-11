@@ -8,21 +8,93 @@
 namespace WPRoadie\Abilities;
 
 use WPRoadie\Safety\Mode;
-use WPRoadie\Safety\Settings;
+use WPRoadie\Safety\Settings as SafetySettings;
 
 defined( 'ABSPATH' ) || exit;
 
 final class Registry {
 
 	/**
-	 * Every ability WPRoadie ships, by class.
+	 * Every ability WPRoadie ships, by class. Nothing reaches an AI client
+	 * without being listed here (or added with the wproadie_ability_classes
+	 * filter), which keeps the attack surface reviewable in one place.
 	 */
 	const ABILITIES = array(
+		// Site info (read).
 		Site\SiteOverview::class,
 		Site\ActiveTheme::class,
 		Site\ListPlugins::class,
 		Site\Versions::class,
 		Site\HealthCheck::class,
+		Site\ActivityLog::class,
+
+		// Prompts (read).
+		\WPRoadie\Prompts\SiteBriefing::class,
+		\WPRoadie\Prompts\CareChecklist::class,
+
+		// Content (write).
+		Content\ListPosts::class,
+		Content\GetPost::class,
+		Content\CreatePost::class,
+		Content\UpdatePost::class,
+		Content\TrashPost::class,
+		Content\GetPostMeta::class,
+		Content\UpdatePostMeta::class,
+		Content\ListTerms::class,
+		Content\CreateTerm::class,
+		Content\SetPostTerms::class,
+		Content\UndoChange::class,
+
+		// Media (write).
+		Media\ListMedia::class,
+		Media\UploadMediaFromUrl::class,
+		Media\SetFeaturedImage::class,
+		Media\UpdateMediaDetails::class,
+
+		// Navigation (write).
+		Navigation\ListMenus::class,
+		Navigation\GetMenu::class,
+		Navigation\CreateMenu::class,
+		Navigation\AddMenuItem::class,
+		Navigation\UpdateMenuItem::class,
+		Navigation\DeleteMenuItem::class,
+		Navigation\AssignMenuLocation::class,
+		Navigation\ListWidgets::class,
+		Navigation\AddBlockWidget::class,
+		Navigation\RemoveWidget::class,
+
+		// Settings (write).
+		Settings\GetOptions::class,
+		Settings\UpdateOptions::class,
+
+		// Plugins and themes (admin).
+		Extensions\InstallPlugin::class,
+		Extensions\ActivatePlugin::class,
+		Extensions\DeactivatePlugin::class,
+		Extensions\UpdatePlugin::class,
+		Extensions\InstallTheme::class,
+		Extensions\ActivateTheme::class,
+		Extensions\UpdateTheme::class,
+
+		// Users (admin).
+		Users\ListUsers::class,
+		Users\CreateUser::class,
+		Users\ChangeUserRole::class,
+
+		// Files (dangerous).
+		Files\ListFiles::class,
+		Files\ReadFile::class,
+		Files\WriteFile::class,
+		Files\DeleteFile::class,
+
+		// Database (dangerous; writes behind their own switch).
+		Database\ListTables::class,
+		Database\RunQuery::class,
+		Database\RunWriteQuery::class,
+
+		// WP-CLI and PHP (dangerous).
+		Cli\RunWpCli::class,
+		Php\RunPhp::class,
 	);
 
 	/**
@@ -58,10 +130,37 @@ final class Registry {
 			array_filter(
 				$this->all(),
 				static function ( AbilityBase $ability ) {
-					return Settings::group_enabled( $ability->group() ) && Mode::allows( $ability->risk() );
+					return SafetySettings::group_enabled( $ability->group() ) && Mode::allows( $ability->risk() ) && $ability->is_available();
 				}
 			)
 		);
+	}
+
+	/**
+	 * Looks up a shipped ability by its full name, enabled or not.
+	 */
+	public function find( string $name ): ?AbilityBase {
+		foreach ( $this->all() as $ability ) {
+			if ( $ability->name() === $name ) {
+				return $ability;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Enabled ability names exposed as one MCP type: "tool" or "prompt".
+	 *
+	 * @return string[]
+	 */
+	public function enabled_names_of_type( string $type ): array {
+		$names = array();
+		foreach ( $this->enabled() as $ability ) {
+			if ( $ability->mcp_type() === $type ) {
+				$names[] = $ability->name();
+			}
+		}
+		return $names;
 	}
 
 	/**
@@ -98,9 +197,9 @@ final class Registry {
 				self::category( $group ),
 				array(
 					/* translators: %s: ability group, e.g. "Site info". */
-					'label'       => sprintf( __( 'WPRoadie: %s', 'wproadie' ), Settings::group_label( $group ) ),
+					'label'       => sprintf( __( 'WPRoadie: %s', 'wproadie' ), SafetySettings::group_label( $group ) ),
 					/* translators: %s: ability group, e.g. "Site info". */
-					'description' => sprintf( __( 'WPRoadie abilities for %s.', 'wproadie' ), Settings::group_label( $group ) ),
+					'description' => sprintf( __( 'WPRoadie abilities for %s.', 'wproadie' ), SafetySettings::group_label( $group ) ),
 				)
 			);
 		}

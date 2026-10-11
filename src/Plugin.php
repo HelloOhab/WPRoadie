@@ -9,9 +9,12 @@ namespace WPRoadie;
 
 use WPRoadie\Abilities\Registry;
 use WPRoadie\Admin\Menu;
+use WPRoadie\Admin\RestApi;
+use WPRoadie\Admin\Updater;
 use WPRoadie\Admin\WpCliCommand;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Settings;
+use WPRoadie\Safety\Stealth;
 use WPRoadie\Server\McpServer;
 use WPRoadie\Server\Permission;
 
@@ -34,9 +37,12 @@ final class Plugin {
 	/**
 	 * Registers hooks. Runs once, when the plugin file is loaded.
 	 */
+	const PRUNE_HOOK = 'wproadie_prune_log';
+
 	public function boot(): void {
 		add_action( 'plugins_loaded', array( $this, 'maybe_upgrade' ) );
 		add_action( 'admin_notices', array( $this, 'adapter_notice' ) );
+		add_action( self::PRUNE_HOOK, array( AuditLog::class, 'prune' ) );
 
 		// The adapter's default server lets any logged-in user (even a
 		// Subscriber) connect. WPRoadie serves its own locked-down server,
@@ -55,6 +61,11 @@ final class Plugin {
 			add_action( 'mcp_adapter_init', array( new McpServer( $registry ), 'register' ) );
 		}
 
+		// The admin screen, its REST API, updates and stealth keep working
+		// with the kill switch on, so WPRoadie can be turned back on.
+		( new RestApi() )->hooks();
+		( new Updater() )->hooks();
+		( new Stealth() )->hooks();
 		if ( is_admin() ) {
 			( new Menu() )->hooks();
 		}
@@ -99,6 +110,9 @@ final class Plugin {
 		if ( get_option( AuditLog::DB_VERSION_OPTION ) !== AuditLog::DB_VERSION ) {
 			AuditLog::install();
 		}
+		if ( ! wp_next_scheduled( self::PRUNE_HOOK ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::PRUNE_HOOK );
+		}
 	}
 
 	public static function activate(): void {
@@ -115,5 +129,6 @@ final class Plugin {
 
 	public static function deactivate(): void {
 		// Data is kept on deactivation; uninstall.php removes it.
+		wp_clear_scheduled_hook( self::PRUNE_HOOK );
 	}
 }

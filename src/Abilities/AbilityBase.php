@@ -4,7 +4,8 @@
  *
  * Subclasses describe the ability and implement execute(). The base class
  * registers it with the Abilities API and wraps the callbacks so every
- * ability gets the same access check and audit log entry.
+ * ability gets the same access check, rate limit, undo capture and audit
+ * log entry.
  *
  * @package WPRoadie
  */
@@ -15,6 +16,7 @@ use Throwable;
 use WP_Error;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\RateLimit;
 use WPRoadie\Server\Permission;
 
 defined( 'ABSPATH' ) || exit;
@@ -22,6 +24,13 @@ defined( 'ABSPATH' ) || exit;
 abstract class AbilityBase {
 
 	const NAMESPACE_PREFIX = 'wproadie/';
+
+	/**
+	 * Undo records collected during the current call. See add_undo().
+	 *
+	 * @var array[]
+	 */
+	private $undo = array();
 
 	/**
 	 * Short name, without the namespace, e.g. "site-overview".
@@ -48,7 +57,7 @@ abstract class AbilityBase {
 
 	/**
 	 * Does the work. Input has already passed schema validation and the
-	 * permission check.
+	 * permission check. Return a WP_Error to fail.
 	 *
 	 * @param array $input Validated input.
 	 * @return mixed|WP_Error
@@ -57,6 +66,28 @@ abstract class AbilityBase {
 
 	public function name(): string {
 		return self::NAMESPACE_PREFIX . $this->slug();
+	}
+
+	/**
+	 * How the MCP server exposes the ability: "tool" or "prompt".
+	 */
+	public function mcp_type(): string {
+		return 'tool';
+	}
+
+	/**
+	 * Whether this host can run the ability at all, e.g. the WP-CLI tool
+	 * needs proc_open. Unavailable abilities are not registered.
+	 */
+	public function is_available(): bool {
+		return true;
+	}
+
+	/**
+	 * Why is_available() is false, for the admin screen.
+	 */
+	public function unavailable_reason(): string {
+		return '';
 	}
 
 	/**
@@ -87,9 +118,13 @@ abstract class AbilityBase {
 	}
 
 	/**
-	 * MCP tool hints. Defaults follow from the risk level.
+	 * MCP hints. Tool defaults follow from the risk level; prompts take
+	 * none, since tool hints are invalid on a prompt.
 	 */
 	protected function annotations(): array {
+		if ( 'tool' !== $this->mcp_type() ) {
+			return array();
+		}
 		$read_only = Mode::RISK_READ === $this->risk();
 		return array(
 			'readonly'      => $read_only,
@@ -100,35 +135,77 @@ abstract class AbilityBase {
 	}
 
 	/**
+	 * Records how to reverse a change. Call it before changing anything
+	 * (or right after creating something) with a record from
+	 * WPRoadie\Log\Undo. Records are stored with the log entry and replayed
+	 * in reverse order by Undo::revert().
+	 *
+	 * @param array|null $record Undo record, or null to skip.
+	 */
+	protected function add_undo( ?array $record ): void {
+		if ( $record ) {
+			$this->undo[] = $record;
+		}
+	}
+
+	/**
+	 * Runs the ability's work directly, without the permission check, rate
+	 * limit or log entry. For composing abilities inside another one that
+	 * has already passed those checks (e.g. a prompt gathering site data).
+	 *
+	 * @param array $input Input, assumed valid.
+	 * @return mixed|WP_Error
+	 */
+	public function run_internal( array $input = array() ) {
+		return $this->execute( $input );
+	}
+
+	/**
+	 * Shorthand for a WP_Error with an HTTP-style status.
+	 */
+	protected function error( string $code, string $message, int $status = 400 ): WP_Error {
+		return new WP_Error( 'wproadie_' . $code, $message, array( 'status' => $status ) );
+	}
+
+	/**
 	 * Registers the ability with the Abilities API. Called during
 	 * wp_abilities_api_init.
 	 */
 	public function register( string $category ): void {
-		wp_register_ability(
-			$this->name(),
-			array(
-				'label'               => $this->label(),
-				'description'         => $this->description(),
-				'category'            => $category,
-				'input_schema'        => $this->input_schema(),
-				'output_schema'       => $this->output_schema(),
-				'execute_callback'    => array( $this, 'handle_execute' ),
-				'permission_callback' => array( $this, 'handle_permission' ),
-				'meta'                => array(
-					'annotations' => $this->annotations(),
-					// Served by the WPRoadie MCP server only. Not public, so the
-					// adapter's default server and other clients never list it.
-					'mcp'         => array(
-						'public' => false,
-						'type'   => 'tool',
-					),
-					'wproadie'    => array(
-						'group' => $this->group(),
-						'risk'  => $this->risk(),
-					),
-				),
-			)
+		$meta = array(
+			// Served by the WPRoadie MCP server only. Not public, so the
+			// adapter's default server and other clients never list it.
+			'mcp'      => array(
+				'public' => false,
+				'type'   => $this->mcp_type(),
+			),
+			'wproadie' => array(
+				'group' => $this->group(),
+				'risk'  => $this->risk(),
+			),
 		);
+
+		$annotations = $this->annotations();
+		if ( $annotations ) {
+			$meta['annotations'] = $annotations;
+		}
+
+		$args = array(
+			'label'               => $this->label(),
+			'description'         => $this->description(),
+			'category'            => $category,
+			'input_schema'        => $this->input_schema(),
+			'execute_callback'    => array( $this, 'handle_execute' ),
+			'permission_callback' => array( $this, 'handle_permission' ),
+			'meta'                => $meta,
+		);
+
+		$output_schema = $this->output_schema();
+		if ( $output_schema ) {
+			$args['output_schema'] = $output_schema;
+		}
+
+		wp_register_ability( $this->name(), $args );
 	}
 
 	/**
@@ -150,23 +227,44 @@ abstract class AbilityBase {
 	}
 
 	/**
-	 * Execute callback handed to the Abilities API. Times the call, turns
-	 * exceptions into errors and writes the audit log entry.
+	 * Execute callback handed to the Abilities API. Applies the rate limit,
+	 * times the call, turns exceptions into errors and writes the audit log
+	 * entry with any undo records.
 	 *
 	 * @param mixed $input Input as validated by the Abilities API.
 	 * @return mixed|WP_Error
 	 */
 	public function handle_execute( $input = null ) {
-		$input   = is_array( $input ) ? $input : array();
-		$started = microtime( true );
+		$input      = is_array( $input ) ? $input : array();
+		$started    = microtime( true );
+		$this->undo = array();
 
-		try {
-			$result = $this->execute( $input );
-		} catch ( Throwable $e ) {
-			$result = new WP_Error( 'wproadie_exception', $e->getMessage() );
+		$limited = RateLimit::hit( get_current_user_id() );
+		if ( is_wp_error( $limited ) ) {
+			$result = $limited;
+		} else {
+			try {
+				$result = $this->execute( $input );
+			} catch ( Throwable $e ) {
+				$result = new WP_Error( 'wproadie_exception', $e->getMessage() );
+			}
 		}
 
-		AuditLog::record( $this->name(), $input, $result, (int) round( ( microtime( true ) - $started ) * 1000 ) );
+		// A failed call changed nothing we can vouch for; keep its undo
+		// records anyway, since a partial change may need reverting.
+		$log_id = AuditLog::record(
+			$this->name(),
+			$input,
+			$result,
+			(int) round( ( microtime( true ) - $started ) * 1000 ),
+			$this->undo
+		);
+
+		if ( $this->undo && $log_id && is_array( $result ) && ! wp_is_numeric_array( $result ) ) {
+			// Tell the AI how to reverse what it just did.
+			$result['undo_id'] = $log_id;
+		}
+		$this->undo = array();
 
 		return $result;
 	}
