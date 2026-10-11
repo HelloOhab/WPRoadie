@@ -53,3 +53,20 @@ jobs:
         run: php "$RUNNER_TEMP/site/wp-cli.phar" --path="$RUNNER_TEMP/site/wordpress" --allow-root eval-file tests/integration/run.php --user=admin
       - name: MCP smoke test
         run: WP="php $RUNNER_TEMP/site/wp-cli.phar --path=$RUNNER_TEMP/site/wordpress --allow-root" bash tests/smoke.sh
+
+  cli:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test

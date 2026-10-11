@@ -44,19 +44,16 @@ final class Permission {
 	/**
 	 * Transport permission callback for the MCP server's HTTP endpoint.
 	 *
+	 * Returns a plain boolean on purpose: MCP Adapter 0.7.0 turns a
+	 * WP_Error into false anyway (clients see WordPress's generic
+	 * rest_forbidden), and logs every WP_Error, which would let anyone
+	 * fill the PHP error log with unauthenticated requests.
+	 *
 	 * @param mixed $request The REST request (unused).
-	 * @return true|WP_Error
 	 */
-	public static function check_transport( $request = null ) {
+	public static function check_transport( $request = null ): bool {
 		unset( $request );
-
-		if ( ! is_user_logged_in() ) {
-			return new WP_Error( 'wproadie_not_authenticated', __( 'Authenticate with a WordPress Application Password.', 'wproadie' ), array( 'status' => 401 ) );
-		}
-		if ( ! self::can_connect() ) {
-			return new WP_Error( 'wproadie_forbidden', __( 'This user is not allowed to connect to WPRoadie.', 'wproadie' ), array( 'status' => 403 ) );
-		}
-		return true;
+		return self::can_connect();
 	}
 
 	public static function grant( int $user_id ): bool {

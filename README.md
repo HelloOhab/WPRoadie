@@ -77,7 +77,7 @@ In wp-admin go to **Tools → WPRoadie → Connect** and create a connection pas
 - **Claude Code:** a `claude mcp add --transport http …` command. Connects over HTTP directly.
 - **Claude Desktop / Cursor:** a JSON block using `@automattic/mcp-wordpress-remote`, which needs Node.js.
 
-The AI acts as you, so everything it does is logged under your name. Keep the password in the team password manager.
+The AI acts as you, so everything it does is logged under your name. Keep the password in the team password manager. Give everyone their own WordPress user: MCP Adapter keeps at most 32 live sessions per user and silently drops the oldest, so a shared login makes teammates knock each other off.
 
 **Working across many sites:** the `wproadie` command-line tool in [`cli/`](cli/README.md) holds the site list and gives your AI one connection that routes to whichever site you name ("work on the Smith Dental site").
 
