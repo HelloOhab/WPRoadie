@@ -17,6 +17,7 @@ use WP_REST_Server;
 use WPRoadie\Abilities\Registry;
 use WPRoadie\Hq\Connection as HqConnection;
 use WPRoadie\Hq\Heartbeat as HqHeartbeat;
+use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Pairing as HqPairing;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Log\Undo;
@@ -40,33 +41,36 @@ final class RestApi {
 
 	public function register_routes(): void {
 		$routes = array(
-			'/status'                       => array(
+			'/status'                           => array(
 				array( WP_REST_Server::READABLE, 'get_status' ),
 			),
-			'/settings'                     => array(
+			'/settings'                         => array(
 				array( WP_REST_Server::EDITABLE, 'update_settings' ),
 			),
-			'/credentials'                  => array(
+			'/credentials'                      => array(
 				array( WP_REST_Server::READABLE, 'list_credentials' ),
 				array( WP_REST_Server::CREATABLE, 'create_credential' ),
 			),
-			'/credentials/(?P<uuid>[\w-]+)' => array(
+			'/credentials/(?P<uuid>[\w-]+)'     => array(
 				array( WP_REST_Server::DELETABLE, 'revoke_credential' ),
 			),
-			'/access'                       => array(
+			'/access'                           => array(
 				array( WP_REST_Server::READABLE, 'list_access' ),
 				array( WP_REST_Server::CREATABLE, 'grant_access' ),
 			),
-			'/access/(?P<user_id>\d+)'      => array(
+			'/access/(?P<user_id>\d+)'          => array(
 				array( WP_REST_Server::DELETABLE, 'revoke_access' ),
 			),
-			'/log'                          => array(
+			'/access/(?P<user_id>\d+)/hq-email' => array(
+				array( WP_REST_Server::CREATABLE, 'set_hq_email' ),
+			),
+			'/log'                              => array(
 				array( WP_REST_Server::READABLE, 'list_log' ),
 			),
-			'/log/(?P<id>\d+)'              => array(
+			'/log/(?P<id>\d+)'                  => array(
 				array( WP_REST_Server::READABLE, 'get_log_entry' ),
 			),
-			'/log/(?P<id>\d+)/undo'         => array(
+			'/log/(?P<id>\d+)/undo'             => array(
 				array( WP_REST_Server::CREATABLE, 'undo_log_entry' ),
 			),
 		);
@@ -427,6 +431,7 @@ final class RestApi {
 				'login'        => $user->user_login,
 				'display_name' => $user->display_name,
 				'email'        => $user->user_email,
+				'hq_email'     => HqIdentity::linked_email( (int) $user->ID ),
 				'is_admin'     => user_can( $user, 'manage_options' ),
 			);
 		};
@@ -455,6 +460,25 @@ final class RestApi {
 		if ( ! Permission::grant( (int) $request->get_param( 'user_id' ) ) ) {
 			return new WP_Error( 'wproadie_not_admin', __( 'Only administrators can be given access.', 'wproadie' ), array( 'status' => 400 ) );
 		}
+		return $this->list_access();
+	}
+
+	/**
+	 * Links the HQ email (the Google account someone signs in to HQ with)
+	 * to a WordPress user whose own email is different. Empty unlinks.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function set_hq_email( WP_REST_Request $request ) {
+		$user = get_userdata( (int) $request['user_id'] );
+		if ( ! $user ) {
+			return new WP_Error( 'wproadie_no_user', __( 'No such user.', 'wproadie' ), array( 'status' => 404 ) );
+		}
+		$email = (string) $request->get_param( 'email' );
+		if ( ! HqIdentity::link( (int) $user->ID, $email ) ) {
+			return new WP_Error( 'wproadie_bad_email', __( 'Enter a valid email address.', 'wproadie' ), array( 'status' => 400 ) );
+		}
+		AuditLog::record( 'admin/link-hq-email', array( 'user' => $user->user_login ), array( 'hq_email' => HqIdentity::linked_email( (int) $user->ID ) ), 0 );
 		return $this->list_access();
 	}
 

@@ -10,6 +10,7 @@
 
 use WPRoadie\Hq\Connection;
 use WPRoadie\Hq\Heartbeat;
+use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Pairing;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Settings;
@@ -226,12 +227,23 @@ wproadie_test(
 				$seen   = pair_test_with_fake_hq(
 					static function ( $body ) use ( $code, $pending ) {
 						$ok = $code === $body['code'] && $pending['verifier'] === $body['code_verifier'];
-						return $ok ? array( 200, array( 'connection_string' => pair_test_string() ) ) : array( 400, array( 'error' => 'invalid_code' ) );
+						return $ok ? array(
+							200,
+							array(
+								'connection_string' => pair_test_string(),
+								'hq_email'          => 'Approver@RhythmCo.example',
+							),
+						) : array( 400, array( 'error' => 'invalid_code' ) );
 					},
 					static function () use ( &$result, $code, $state ) {
 						$result = Pairing::finish( $code, $state );
 					}
 				);
+
+				// The approving HQ admin's email is linked to this user (their
+				// WordPress email differs), so HQ can issue them passwords.
+				wproadie_assert_same( 'approver@rhythmco.example', HqIdentity::linked_email( get_current_user_id() ) );
+				HqIdentity::link( get_current_user_id(), '' );
 
 				wproadie_assert( is_array( $result ), is_wp_error( $result ) ? $result->get_error_message() : '' );
 				wproadie_assert_same(

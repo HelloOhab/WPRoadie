@@ -114,8 +114,9 @@ The AI acts as you, so everything it does is logged under your name. Keep the pa
 ## Safety model
 
 1. **Who can connect.** Only users with `manage_options` **and** the `wproadie_connect` capability. The capability is granted per user, never per role, so client admins do not get AI access by default. It is checked on the HTTP transport and again inside every tool, because STDIO has no transport check. The admin screen and its REST API need the same, except the setup checklist ([who sees it](#set-up-a-site-in-four-clicks); turn self-setup off with the `wproadie_admin_can_set_up` filter).
-2. **The adapter's default server is off.** It admits any logged-in user, including Subscribers. Turn it back on with `add_filter( 'wproadie_allow_default_server', '__return_true' );`.
-3. **Modes.** Every tool declares a risk level:
+2. **HQ only sets people up as themselves.** When WPRoadie HQ asks for a connection password, it names the signed-in person (their verified Google email). The site issues one only if that email is the WordPress user's own email, or the HQ email a site administrator linked to the user (Who has AI access → HQ sign-in email, or `wp wproadie hq-email <user> <email>`). Connecting with the **Connect to HQ** button links the approving HQ admin's email automatically. Turn the check off with the `wproadie_hq_require_email_match` filter.
+3. **The adapter's default server is off.** It admits any logged-in user, including Subscribers. Turn it back on with `add_filter( 'wproadie_allow_default_server', '__return_true' );`.
+4. **Modes.** Every tool declares a risk level:
 
    | Mode | Allows |
    | --- | --- |
@@ -124,18 +125,18 @@ The AI acts as you, so everything it does is logged under your name. Keep the pa
    | Read-only | read |
 
    The mode comes from `WPROADIE_MODE` in wp-config.php, then the admin setting, then `wp_get_environment_type()` (`staging`, `development` and `local` map to Staging; anything else, including unset, maps to Production). It is checked again on every call.
-4. **Tool switches.** A tool whose group is off, whose risk the mode forbids, or which this host cannot run (e.g. no `proc_open` for WP-CLI, no direct filesystem for installs, `DISALLOW_FILE_EDIT`/`DISALLOW_FILE_MODS` for file writes) is never registered, so the AI never sees it.
-5. **Guardrails inside tools** (all in `src/Safety/Guardrails.php`, each list filterable):
+5. **Tool switches.** A tool whose group is off, whose risk the mode forbids, or which this host cannot run (e.g. no `proc_open` for WP-CLI, no direct filesystem for installs, `DISALLOW_FILE_EDIT`/`DISALLOW_FILE_MODS` for file writes) is never registered, so the AI never sees it.
+6. **Guardrails inside tools** (all in `src/Safety/Guardrails.php`, each list filterable):
    - **Options:** a write allow-list that excludes anything about logins or the site's address (`admin_email`, `siteurl`, `home`, `users_can_register`, `default_role`…), and a slightly wider read list. Salts and API keys are never readable.
    - **Files:** reads only in themes, plugins, must-use plugins and `wp-content/wproadie`; writes only in the **active child theme** and `wp-content/wproadie` (no PHP there). Symlinks are resolved first; `wp-config*.php`, `.env`, keys and SQL dumps are off limits. PHP is syntax-checked before writing, and after a PHP change the home page is loaded; if it breaks, the change is rolled back automatically.
    - **Database:** reads are one `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`, checked by a quote- and comment-aware lexer and run inside a read-only transaction that is always rolled back; password hashes and session tokens are masked. Writes (separate switch, off by default) are one `INSERT`/`UPDATE`/`DELETE`/`REPLACE`, never schema changes, `UPDATE`/`DELETE` need a `WHERE`, run in a transaction, with `dry_run` and `expected_rows` to check before committing.
    - **WP-CLI:** an allow-list of commands, run without a shell as the connected user; `--exec`, `--require`, `--path`, `--user` and similar flags are refused; `search-replace` only with `--dry-run`; `option get` only for readable options.
    - **Plugins:** WPRoadie and MCP Adapter cannot be deactivated or updated by the AI. Downloads (media, zip installs) only from public addresses: private, loopback, link-local (cloud metadata) and carrier-grade NAT addresses are refused, redirects included.
    - **Users:** no creating or promoting to administrator-like roles, no changing your own role or another admin's.
-6. **Audit log.** Every call is written to `{prefix}wproadie_log`: user, tool, input, result (capped at 8 KB), status, duration, transport, IP and undo data. Entries older than 365 days are pruned daily (`wproadie_log_retention_days` filter), with their file backups.
-7. **Rate limit.** 120 calls per minute per user by default; change it on the admin screen (0 turns it off).
-8. **Kill switch.** `define( 'WPROADIE_DISABLED', true );` in wp-config.php always wins. The admin button and `wp wproadie disable` do the same from the UI or CLI. The admin screen keeps working so WPRoadie can be turned back on.
-9. **Stealth mode.** Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except WPRoadie users, and hides the WPRoadie menu and setup checklist from other administrators (unless nobody has access yet, so a site cannot be locked out). The connection, log and kill switch keep working.
+7. **Audit log.** Every call is written to `{prefix}wproadie_log`: user, tool, input, result (capped at 8 KB), status, duration, transport, IP and undo data. Entries older than 365 days are pruned daily (`wproadie_log_retention_days` filter), with their file backups.
+8. **Rate limit.** 120 calls per minute per user by default; change it on the admin screen (0 turns it off).
+9. **Kill switch.** `define( 'WPROADIE_DISABLED', true );` in wp-config.php always wins. The admin button and `wp wproadie disable` do the same from the UI or CLI. The admin screen keeps working so WPRoadie can be turned back on.
+10. **Stealth mode.** Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except WPRoadie users, and hides the WPRoadie menu and setup checklist from other administrators (unless nobody has access yet, so a site cannot be locked out). The connection, log and kill switch keep working.
 
 Known limits: DNS can change between the URL check and the download (rebinding). `run-php` runs in the same PHP process, so a true fatal error (memory, redeclared function) ends that request; over STDIO that ends the session, and the fatal is logged. Over STDIO, PHP files changed by the AI may be served from the web server's OPcache for up to its `revalidate_freq`.
 
@@ -171,7 +172,8 @@ or paste it under **Tools → WPRoadie → Get set up → Use a connection strin
 
 ```
 wp wproadie status              Version, adapter, mode, endpoint, tools, who has access
-wp wproadie grant <user>        Let an administrator connect
+wp wproadie grant <user>        Let an administrator connect (--hq-email=<email> if their HQ email differs)
+wp wproadie hq-email <user> [<email>|--clear]  Show or link the HQ sign-in email of a user
 wp wproadie revoke <user>       Remove access
 wp wproadie mode [<mode>]       Show or set: staging | production | read_only | auto
 wp wproadie disable | enable    Kill switch

@@ -48,6 +48,12 @@ export const api = {
 			method: 'POST',
 			data: { user_id: userId },
 		} ),
+	setHqEmail: ( userId, email ) =>
+		apiFetch( {
+			path: `${ BASE }/access/${ userId }/hq-email`,
+			method: 'POST',
+			data: { email },
+		} ),
 	revoke: ( userId ) =>
 		apiFetch( { path: `${ BASE }/access/${ userId }`, method: 'DELETE' } ),
 	log: ( params ) => {

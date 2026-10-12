@@ -9,6 +9,7 @@ namespace WPRoadie\Admin;
 
 use WP_CLI;
 use WPRoadie\Abilities\Registry;
+use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Plugin;
 use WPRoadie\Safety\Mode;
@@ -87,9 +88,15 @@ final class WpCliCommand {
 	 * <user>
 	 * : User ID, login or email. Must be an administrator.
 	 *
+	 * [--hq-email=<email>]
+	 * : The email this person signs in to WPRoadie HQ with, when it differs
+	 * from their WordPress email. HQ can only issue them passwords if one of
+	 * the two matches.
+	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp wproadie grant abdul
+	 *     wp wproadie grant clientadmin --hq-email=abdul@rhythmco.com
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Named arguments.
@@ -99,7 +106,55 @@ final class WpCliCommand {
 		if ( ! Permission::grant( $user->ID ) ) {
 			WP_CLI::error( sprintf( '%s is not an administrator (needs manage_options).', $user->user_login ) );
 		}
+		if ( isset( $assoc_args['hq-email'] ) ) {
+			$this->hq_email( array( $args[0], (string) $assoc_args['hq-email'] ), array() );
+		}
 		WP_CLI::success( sprintf( '%s can now connect to WPRoadie.', $user->user_login ) );
+	}
+
+	/**
+	 * Shows or links the WPRoadie HQ email of a user.
+	 *
+	 * HQ only issues a connection password to the HQ account whose email is
+	 * the WordPress user's email, or the HQ email linked here.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <user>
+	 * : User ID, login or email.
+	 *
+	 * [<email>]
+	 * : The HQ email to link.
+	 *
+	 * [--clear]
+	 * : Remove the link.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp wproadie hq-email clientadmin abdul@rhythmco.com
+	 *     wp wproadie hq-email clientadmin --clear
+	 *
+	 * @subcommand hq-email
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function hq_email( $args, $assoc_args ) {
+		$user = $this->user( $args[0] );
+		if ( ! empty( $assoc_args['clear'] ) ) {
+			HqIdentity::link( (int) $user->ID, '' );
+			WP_CLI::success( sprintf( 'Removed the HQ email link of %s.', $user->user_login ) );
+			return;
+		}
+		if ( ! isset( $args[1] ) ) {
+			$linked = HqIdentity::linked_email( (int) $user->ID );
+			WP_CLI::line( '' !== $linked ? $linked : sprintf( 'No HQ email linked; HQ must match %s.', $user->user_email ) );
+			return;
+		}
+		if ( ! HqIdentity::link( (int) $user->ID, (string) $args[1] ) ) {
+			WP_CLI::error( 'That is not a valid email address.' );
+		}
+		WP_CLI::success( sprintf( 'Linked HQ email %s to %s.', HqIdentity::linked_email( (int) $user->ID ), $user->user_login ) );
 	}
 
 	/**
