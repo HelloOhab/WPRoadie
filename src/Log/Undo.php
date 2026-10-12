@@ -303,6 +303,14 @@ final class Undo {
 				$errors[] = $done->get_error_message();
 			} else {
 				++$reverted;
+
+				/**
+				 * Fires after one undo record was restored, e.g. so a page
+				 * builder can drop caches built from the undone version.
+				 *
+				 * @param array $record The undo record.
+				 */
+				do_action( 'wproadie_undo_record_reverted', (array) $record );
 			}
 		}
 
