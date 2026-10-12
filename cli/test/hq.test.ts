@@ -161,7 +161,7 @@ describe('HQ', () => {
 
       const bakery = registry.sites.find((s) => s.name === 'green-bakery');
       assert.ok(bakery);
-      await assert.rejects(getPassword(bakery), /no connection password for green-bakery in HQ/i);
+      await assert.rejects(getPassword(bakery), /no active connection password for green-bakery in HQ/i);
     } finally {
       process.env.WPROADIE_CONFIG = previous.config;
       if (previous.token === undefined) delete process.env.WPROADIE_HQ_TOKEN;

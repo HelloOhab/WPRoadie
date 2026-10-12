@@ -125,6 +125,29 @@ The site answers `200` with `{"ok":true,"result":{…}}`, or `4xx` with `{"ok":f
 
 Error codes: `unknown_command`, `bad_args`, `user_not_found`, `no_access` (user has no WPRoadie access), `disabled` (kill switch on), `insecure` (not HTTPS), `not_found` (no such password), `failed`.
 
+## Details both sides follow
+
+These were settled while building both sides; they are part of the contract.
+
+- **Encoding.** Connection strings are base64url without padding (decoders accept padding). The site ID is a lowercase UUID. Nonces and signatures are lowercase hex; uppercase is rejected.
+- **Header checks.** A missing or malformed timestamp, nonce or signature gets `bad_signature`; a site header that is not a UUID gets `unknown_site`. Checks run in this order: `unknown_site`, `stale`, `bad_signature`, `replayed`. The ±300 s window is inclusive. HQ keeps one nonce store for all sites.
+- **After a valid signature (HQ).** Invalid JSON, a body that fails validation, or a body `site_id` different from the header gets `400 {"error":"bad_request"}`; a body over 512 KB gets `413 {"error":"too_large"}`. The nonce is spent either way.
+- **Commands.** Commands without arguments send `"args":{}`. The `heartbeat` command's result must carry the right `site_id`, and HQ stores it as an ordinary heartbeat. HQ follows no redirects and only sends commands to `https://` endpoints (`HQ_ALLOW_HTTP_SITES=1` for local testing).
+- **Provisioning.** HQ sends the person's WordPress username for that site (a per-site override, else their default) and the label `"<name> (HQ)"`. It stores the `username` the site returns. If `revoke_credential` answers `not_found`, HQ still marks its copy revoked: the password is gone either way.
+- **Revoke everywhere.** HQ sends `revoke_user` to every connected site, five at a time; `user_not_found` counts as done. It marks all of that person's stored passwords revoked whatever the sites answer, and it is safe to run again for sites that were unreachable.
+
+## CLI API (HQ ↔ `wproadie` command)
+
+`GET <hq url>/api/v1/cli/sites` with `Authorization: Bearer wrhq_…` (a personal token created under **Me** in HQ). It answers `{"sites":[…]}`, each site being:
+
+```json
+{ "id": "…", "name": "Smith Dental", "client": "…", "url": "https://…", "mcp_endpoint": "https://…/wp-json/wproadie/mcp",
+  "environment": "production", "mode": "production", "disabled": false, "wp_username": "abdul",
+  "credential": { "username": "abdul", "password": "abcd efgh …" } }
+```
+
+`credential` is the caller's own active password for that site, or `null`. A revoked token or deactivated HQ account gets `401`.
+
 ## Security notes
 
 - Whoever holds a site's secret can mint Application Passwords for that site's WPRoadie users. HQ stores secrets and passwords encrypted at rest, and only HQ admins can add sites or revoke people.

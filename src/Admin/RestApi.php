@@ -383,11 +383,10 @@ final class RestApi {
 	 * @param object $row Log row.
 	 */
 	private function describe_row( $row ): array {
-		$user = get_userdata( (int) $row->user_id );
 		return array(
 			'id'          => (int) $row->id,
 			'time'        => gmdate( 'c', (int) strtotime( $row->created_at . ' UTC' ) ),
-			'user'        => $user ? $user->user_login : '#' . $row->user_id,
+			'user'        => AuditLog::actor( $row ),
 			'ability'     => $row->ability,
 			'status'      => $row->status,
 			'summary'     => 'error' === $row->status ? wp_html_excerpt( (string) $row->result, 160, '…' ) : wp_html_excerpt( (string) $row->input, 120, '…' ),

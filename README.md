@@ -12,6 +12,7 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 - [Connect an AI client](#connect-an-ai-client)
 - [Safety model](#safety-model)
 - [Undo](#undo)
+- [WPRoadie HQ](#wproadie-hq)
 - [WP-CLI commands](#wp-cli)
 - [Updates and releases](#updates-and-releases)
 - [Development](#development)
@@ -130,6 +131,24 @@ Covered: posts and pages (a WordPress revision is also saved), creating and tras
 
 Not covered: raw SQL writes, PHP snippets, and plugin or theme installs and updates. Their tool descriptions say so. The AI may only undo a change if the current mode allows the original tool; a person can undo from the admin screen in any mode.
 
+## WPRoadie HQ
+
+[WPRoadie HQ](https://github.com/HelloOhab/WPRoadie-HQ) (a separate, private app) shows every site's status in one place and manages the team's connection passwords. Sites report to HQ; AI traffic never goes through it.
+
+**Connect a site:** add it in HQ, which shows a connection string once, then on the site run
+
+```bash
+wp wproadie hq connect 'wproadie-hq:v1:…'
+```
+
+or paste the string under **Tools → WPRoadie → Overview → WPRoadie HQ**. You can also define `WPROADIE_HQ_URL`, `WPROADIE_HQ_SITE_ID` and `WPROADIE_HQ_SECRET` in wp-config.php.
+
+**What the site sends:** a signed heartbeat every hour (and a minute after the mode, kill switch or tool switches change): versions, mode, who has access, pending updates, Site Health (refreshed every 6 hours) and the last 24 hours of AI activity.
+
+**What HQ can do on the site:** list access, issue and revoke a person's WPRoadie Application Password, and revoke a person entirely when they leave. HQ can only issue passwords to administrators who already have WPRoadie access on that site, only over HTTPS, and never while the kill switch is on. Revocations still work with the kill switch on. Every HQ command appears in the activity log as `hq/…`, user "HQ"; passwords are never logged.
+
+`wp wproadie hq status` shows the last heartbeat; `wp wproadie hq heartbeat` sends one now; `wp wproadie hq disconnect` stops reporting. The protocol is in [`docs/hq-protocol.md`](docs/hq-protocol.md).
+
 ## WP-CLI
 
 ```
@@ -139,6 +158,7 @@ wp wproadie revoke <user>       Remove access
 wp wproadie mode [<mode>]       Show or set: staging | production | read_only | auto
 wp wproadie disable | enable    Kill switch
 wp wproadie log [--limit=20]    Recent AI activity
+wp wproadie hq connect <string> Connect to WPRoadie HQ (also: hq status, hq heartbeat, hq disconnect)
 ```
 
 ## Updates and releases
@@ -201,7 +221,7 @@ tests/                     integration tests and MCP smoke test
 
 ## Not built yet
 
-- **WPRoadie HQ** (phase 2): the hosted dashboard for all sites and central credentials, with OAuth instead of Application Passwords.
+- **OAuth** instead of Application Passwords, so HQ never stores raw passwords (the plan's later HQ step).
 - **Chat in wp-admin** (phase 3).
 - **Page-builder integrations** (phase 3).
 

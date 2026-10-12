@@ -170,7 +170,7 @@ export async function hqPassword(site: Site, registry?: Registry): Promise<{ use
     throw new HqError(`HQ no longer lists ${site.name}. Run "wproadie hq sync --prune".`);
   }
   if (!remote.credential) {
-    throw new HqError(`You have no connection password for ${site.name} in HQ yet. Open the site in HQ and click "Provision".`);
+    throw new HqError(`You have no active connection password for ${site.name} in HQ (none issued yet, or it was revoked). Open the site in HQ and click "Provision credential".`);
   }
   return remote.credential;
 }

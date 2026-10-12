@@ -75,11 +75,10 @@ final class ActivityLog extends AbilityBase {
 		$page    = AuditLog::query( $filters, (int) ( $input['limit'] ?? 20 ) );
 		$entries = array();
 		foreach ( $page['rows'] as $row ) {
-			$user      = get_userdata( (int) $row->user_id );
 			$entries[] = array(
 				'id'       => (int) $row->id,
 				'time'     => gmdate( 'c', (int) strtotime( $row->created_at . ' UTC' ) ),
-				'user'     => $user ? $user->user_login : null,
+				'user'     => AuditLog::actor( $row ),
 				'tool'     => $row->ability,
 				'status'   => $row->status,
 				'input'    => wp_html_excerpt( (string) $row->input, 300, '…' ),

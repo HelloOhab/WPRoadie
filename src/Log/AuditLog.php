@@ -172,6 +172,24 @@ final class AuditLog {
 	}
 
 	/**
+	 * Who made a logged call, for display: a login, "HQ" for signed HQ
+	 * commands (which run with no WordPress user), or "#<id>" for a
+	 * deleted user.
+	 *
+	 * @param object $row Log row.
+	 */
+	public static function actor( $row ): string {
+		$user = get_userdata( (int) $row->user_id );
+		if ( $user ) {
+			return $user->user_login;
+		}
+		if ( 0 === (int) $row->user_id && 0 === strpos( (string) $row->ability, 'hq/' ) ) {
+			return 'HQ';
+		}
+		return '#' . $row->user_id;
+	}
+
+	/**
 	 * AI activity for HQ's heartbeat: the last tool call and 24-hour
 	 * counts. Counts only WPRoadie tool calls, not HQ commands or undos
 	 * made from wp-admin.
