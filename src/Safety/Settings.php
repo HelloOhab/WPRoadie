@@ -35,6 +35,15 @@ final class Settings {
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
+		// Offered only while Elementor is active; kit changes are admin risk.
+		'elementor'      => array(
+			'risk'    => Mode::RISK_WRITE,
+			'default' => true,
+		),
+		'divi'           => array(
+			'risk'    => Mode::RISK_WRITE,
+			'default' => true,
+		),
 		'settings'       => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
@@ -76,6 +85,8 @@ final class Settings {
 			'content'        => __( 'Content', 'wproadie' ),
 			'media'          => __( 'Media', 'wproadie' ),
 			'navigation'     => __( 'Navigation', 'wproadie' ),
+			'elementor'      => __( 'Elementor', 'wproadie' ),
+			'divi'           => __( 'Divi', 'wproadie' ),
 			'settings'       => __( 'Settings', 'wproadie' ),
 			'extensions'     => __( 'Plugins & themes', 'wproadie' ),
 			'users'          => __( 'Users', 'wproadie' ),

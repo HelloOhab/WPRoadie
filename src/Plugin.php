@@ -46,6 +46,8 @@ final class Plugin {
 	public function boot(): void {
 		add_action( 'plugins_loaded', array( $this, 'maybe_upgrade' ) );
 		add_action( self::PRUNE_HOOK, array( AuditLog::class, 'prune' ) );
+		// Restoring a Divi page also clears Divi's CSS cache for it.
+		add_action( 'wproadie_undo_record_reverted', array( \WPRoadie\Abilities\Divi\Divi::class, 'after_undo' ) );
 
 		// The adapter's default server lets any logged-in user (even a
 		// Subscriber) connect. WPRoadie serves its own locked-down server,
@@ -73,6 +75,8 @@ final class Plugin {
 		// and its commands can still take access away (never grant it).
 		( new HqHeartbeat() )->hooks();
 		( new HqCommands() )->hooks();
+		// Page builders: keep their caches in step when a change is undone.
+		Abilities\Elementor\ElementorHelper::hooks();
 		if ( is_admin() ) {
 			( new Menu() )->hooks();
 			( new Notices() )->hooks();

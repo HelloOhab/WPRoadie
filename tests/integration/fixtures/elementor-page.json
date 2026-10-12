@@ -1,0 +1,185 @@
+[
+	{
+		"id": "a1b2c3d",
+		"elType": "container",
+		"settings": {
+			"content_width": "boxed",
+			"flex_direction": "column",
+			"background_background": "classic",
+			"background_color": "#F4F1EA",
+			"padding": { "unit": "px", "top": "80", "right": "20", "bottom": "80", "left": "20", "isLinked": false },
+			"__globals__": { "background_color": "" }
+		},
+		"elements": [
+			{
+				"id": "4f5e6d7",
+				"elType": "widget",
+				"settings": {
+					"title": "Welcome to Café Rhythm — \"best\" coffee in town",
+					"header_size": "h1",
+					"align": "center",
+					"__globals__": { "title_color": "globals/colors?id=primary", "typography_typography": "globals/typography?id=primary" }
+				},
+				"elements": [],
+				"widgetType": "heading"
+			},
+			{
+				"id": "9e8d7c6",
+				"elType": "widget",
+				"settings": {
+					"editor": "<p>Call us at <strong>555-0100</strong> or visit our shop at 12 Main St. We roast every morning with love ❤️ and a backslash \\ for good measure.</p><p>Second paragraph that is long enough to need truncating in the outline summary because it keeps going and going.</p>",
+					"text_color": "#333333",
+					"typography_font_size": { "unit": "px", "size": 18, "sizes": [] },
+					"typography_line_height": { "unit": "em", "size": 1.5, "sizes": [] }
+				},
+				"elements": [],
+				"widgetType": "text-editor"
+			},
+			{
+				"id": "b0a1c2e",
+				"elType": "widget",
+				"settings": {
+					"text": "Call 555-0100",
+					"link": { "url": "tel:5550100", "is_external": "", "nofollow": "", "custom_attributes": "" },
+					"align": "center",
+					"selected_icon": { "value": "fas fa-phone", "library": "fa-solid" },
+					"__dynamic__": { "align": "[elementor-tag id=\"5f1e2d3\" name=\"acf-text\" settings=\"%7B%22key%22%3A%22phone_5550100%22%7D\"]" }
+				},
+				"elements": [],
+				"widgetType": "button"
+			},
+			{
+				"id": "c3d4e5f",
+				"elType": "widget",
+				"settings": {
+					"image": { "url": "https://example.com/wp-content/uploads/2024/05/shop-front.jpg", "id": 42, "size": "", "alt": "Our shop front", "source": "library" },
+					"image_size": "large",
+					"caption_source": "none"
+				},
+				"elements": [],
+				"widgetType": "image"
+			},
+			{
+				"id": "d6e7f80",
+				"elType": "container",
+				"settings": { "flex_direction": "row", "content_width": "full" },
+				"elements": [
+					{
+						"id": "e1f2a3b",
+						"elType": "widget",
+						"settings": {
+							"icon_list": [
+								{ "text": "Open 7am – 5pm", "selected_icon": { "value": "fas fa-clock", "library": "fa-solid" }, "_id": "1a2b3c4" },
+								{ "text": "Phone 555-0100", "selected_icon": { "value": "fas fa-phone", "library": "fa-solid" }, "link": { "url": "tel:5550100" }, "_id": "5d6e7f8" }
+							]
+						},
+						"elements": [],
+						"widgetType": "icon-list"
+					},
+					{
+						"id": "f9a8b7c",
+						"elType": "widget",
+						"settings": {
+							"form_name": "Contact",
+							"form_fields": [
+								{ "custom_id": "name", "field_label": "Name", "placeholder": "Name", "_id": "aa11bb2" },
+								{ "custom_id": "phone", "field_type": "tel", "field_label": "Phone (e.g. 555-0100)", "_id": "cc33dd4" }
+							],
+							"email_to": "hello@example.com"
+						},
+						"elements": [],
+						"widgetType": "form"
+					}
+				],
+				"isInner": true
+			},
+			{
+				"id": "0badc0d",
+				"elType": "widget",
+				"settings": { "html": "<script>window.roadieTracking = true;</script><div class=\"x\">Custom</div>" },
+				"elements": [],
+				"widgetType": "html"
+			}
+		],
+		"isInner": false,
+		"customKey": { "kept": true, "list": [ 1, 2.5, "three" ] }
+	},
+	{
+		"id": "5ec7104",
+		"elType": "section",
+		"settings": { "layout": "boxed", "gap": "default", "structure": "20" },
+		"elements": [
+			{
+				"id": "c01a001",
+				"elType": "column",
+				"settings": { "_column_size": 50, "_inline_size": null },
+				"elements": [
+					{
+						"id": "7e57ed1",
+						"elType": "widget",
+						"settings": { "title": "Our story", "link": { "url": "https://example.com/about/", "is_external": "on" } },
+						"elements": [],
+						"widgetType": "heading"
+					}
+				],
+				"isInner": false
+			},
+			{
+				"id": "c01a002",
+				"elType": "column",
+				"settings": { "_column_size": 50, "_inline_size": null },
+				"elements": [
+					{
+						"id": "1a5ec71",
+						"elType": "section",
+						"settings": { "structure": "10" },
+						"elements": [
+							{
+								"id": "1c01a01",
+								"elType": "column",
+								"settings": { "_column_size": 100 },
+								"elements": [
+									{
+										"id": "7e57ed2",
+										"elType": "widget",
+										"settings": { "testimonial_content": "Best flat white I've had. Ring 555-0100 to book!", "testimonial_name": "Jo Bloggs" },
+										"elements": [],
+										"widgetType": "testimonial"
+									}
+								],
+								"isInner": true
+							}
+						],
+						"isInner": true
+					}
+				],
+				"isInner": false
+			}
+		],
+		"isInner": false
+	},
+	{
+		"id": "a70a1c1",
+		"elType": "e-div-block",
+		"settings": {},
+		"elements": [
+			{
+				"id": "a70a1c2",
+				"elType": "widget",
+				"widgetType": "e-heading",
+				"settings": {
+					"title": { "$$type": "html-v3", "value": { "content": { "$$type": "string", "value": "Atomic heading" }, "children": [] } },
+					"classes": { "$$type": "classes", "value": [ "e-a70a1c2-1" ] }
+				},
+				"styles": { "e-a70a1c2-1": { "id": "e-a70a1c2-1", "type": "class", "label": "local", "variants": [] } },
+				"editor_settings": [],
+				"version": "0.4",
+				"elements": []
+			}
+		],
+		"isInner": false,
+		"styles": [],
+		"editor_settings": [],
+		"version": "0.4"
+	}
+]

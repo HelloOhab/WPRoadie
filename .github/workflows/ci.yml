@@ -44,6 +44,8 @@ jobs:
             wp: '6.9'
           - php: '8.3'
             wp: '6.9'
+            # The Elementor tests use the real plugin here, fixtures on 7.4.
+            elementor: 'v3.35.9'
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -51,6 +53,8 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: pdo_sqlite, sqlite3
       - run: bash bin/test-site.sh "$RUNNER_TEMP/site" ${{ matrix.wp }}
+      - if: matrix.elementor
+        run: bash bin/test-elementor.sh "$RUNNER_TEMP/site" ${{ matrix.elementor }}
       - name: Integration tests
         run: php "$RUNNER_TEMP/site/wp-cli.phar" --path="$RUNNER_TEMP/site/wordpress" --allow-root eval-file tests/integration/run.php --user=admin
       - name: MCP smoke test

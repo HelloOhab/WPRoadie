@@ -20,7 +20,7 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 
 ## What it can do
 
-52 tools and 2 prompts, in groups an admin can switch on and off. A group's **risk** decides which modes allow it.
+79 tools and 2 prompts, in groups an admin can switch on and off. The Elementor and Divi groups only appear on sites running that builder. A group's **risk** decides which modes allow it.
 
 | Group | Tools | Risk | Default |
 | --- | --- | --- | --- |
@@ -29,6 +29,8 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 | Content | `list-posts`, `get-post`, `create-post`, `update-post`, `trash-post`, `get-post-meta`, `update-post-meta`, `list-terms`, `create-term`, `set-post-terms`, `undo-change` | write | on |
 | Media | `list-media`, `upload-media-from-url`, `set-featured-image`, `update-media-details` | write | on |
 | Navigation | `list-menus`, `get-menu`, `create-menu`, `add-menu-item`, `update-menu-item`, `delete-menu-item`, `assign-menu-location`, `list-widgets`, `add-block-widget`, `remove-widget` | write | on |
+| Elementor | `elementor-list-pages`, `elementor-get-page`, `elementor-get-element`, `elementor-update-element`, `elementor-add-element`, `elementor-remove-element`, `elementor-move-element`, `elementor-duplicate-element`, `elementor-replace-text`, `elementor-list-templates`, `elementor-insert-template`, `elementor-get-kit`, `elementor-update-kit` (admin), `elementor-regenerate-css` | write | on (only while Elementor is active) |
+| Divi | `divi-list-pages`, `divi-get-page`, `divi-get-module`, `divi-update-module`, `divi-add-module`, `divi-remove-module`, `divi-move-module`, `divi-duplicate-module`, `divi-replace-text`, `divi-list-layouts`, `divi-insert-layout`, `divi-list-theme-builder`, `divi-clear-cache` | write | on (only while Divi is active) |
 | Settings | `get-options`, `update-options` (allow-listed options only) | write | on |
 | Plugins & themes | `install-plugin`, `activate-plugin`, `deactivate-plugin`, `update-plugin`, `install-theme`, `activate-theme`, `update-theme` | admin | on |
 | Users | `list-users`, `create-user`, `change-user-role` | admin | **off** |
@@ -39,6 +41,10 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 | PHP | `run-php` | dangerous | **off** |
 
 All tools are named `wproadie-<name>` in MCP clients. Every change returns an `undo_id`.
+
+**Elementor.** On sites built with Elementor, the AI can read a page as a compact outline, change, add, move, duplicate or remove widgets, insert saved templates, replace text such as a phone number across every page (with a dry run first), and adjust global colors and fonts. Only the targeted element changes: widgets from inactive add-ons and unknown data are never lost. Every change can be undone, and Elementor's CSS is regenerated automatically. Tested against Elementor 3.24, 3.35 and 4.0. See [docs/elementor.md](docs/elementor.md).
+
+**Divi.** On sites running Divi (theme, Extra or the Divi Builder plugin) the AI can outline and edit Divi 4 (shortcode) and Divi 5 (block) pages module by module, add sections and modules, use Divi Library items, find the Theme Builder header and footer, and find and replace text across all Divi pages with a dry run first. Edits change only the targeted module (an unchanged page stays byte-for-byte the same), save a revision, clear Divi's CSS cache and can be undone. Built from Divi's storage formats and source; **check it on a staging copy of a Divi site first**. See [docs/divi.md](docs/divi.md).
 
 ## Set up a site in four clicks
 
@@ -245,7 +251,7 @@ tests/                     integration tests and MCP smoke test
 
 - **OAuth** instead of Application Passwords, so HQ never stores raw passwords (the plan's later HQ step).
 - **Chat in wp-admin** (phase 3).
-- **Page-builder integrations** (phase 3).
+- **More page builders** (Beaver Builder, Bricks, WooCommerce product editing) and Elementor page settings.
 
 ## Clean-room rule
 

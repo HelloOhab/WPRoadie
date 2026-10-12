@@ -63,6 +63,37 @@ final class Registry {
 		Navigation\AddBlockWidget::class,
 		Navigation\RemoveWidget::class,
 
+		// Elementor (write).
+		Elementor\ListPages::class,
+		Elementor\GetPage::class,
+		Elementor\GetElement::class,
+		Elementor\UpdateElement::class,
+		Elementor\AddElement::class,
+		Elementor\RemoveElement::class,
+		Elementor\MoveElement::class,
+		Elementor\DuplicateElement::class,
+		Elementor\ReplaceText::class,
+		Elementor\ListTemplates::class,
+		Elementor\InsertTemplate::class,
+		Elementor\GetKit::class,
+		Elementor\UpdateKit::class,
+		Elementor\RegenerateCss::class,
+
+		// Divi (write).
+		Divi\ListPages::class,
+		Divi\GetPage::class,
+		Divi\GetModule::class,
+		Divi\UpdateModule::class,
+		Divi\AddModule::class,
+		Divi\RemoveModule::class,
+		Divi\MoveModule::class,
+		Divi\DuplicateModule::class,
+		Divi\ReplaceText::class,
+		Divi\ListLayouts::class,
+		Divi\InsertLayout::class,
+		Divi\ListThemeBuilder::class,
+		Divi\ClearCache::class,
+
 		// Settings (write).
 		Settings\GetOptions::class,
 		Settings\UpdateOptions::class,
