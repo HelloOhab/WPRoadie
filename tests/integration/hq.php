@@ -1,0 +1,364 @@
+<?php
+/**
+ * HQ connection, signing, commands and heartbeats (docs/hq-protocol.md).
+ *
+ * @package WPRoadie
+ */
+
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- Test file.
+
+use WPRoadie\Admin\Credentials;
+use WPRoadie\Hq\Connection;
+use WPRoadie\Hq\Heartbeat;
+use WPRoadie\Hq\Signer;
+use WPRoadie\Log\AuditLog;
+use WPRoadie\Safety\Settings;
+use WPRoadie\Server\Permission;
+
+const HQ_TEST_SITE   = '6f1c2a3e-1b2c-4d5e-8f90-123456789abc';
+const HQ_TEST_SECRET = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
+
+/**
+ * A connection string for the test HQ.
+ *
+ * @param array $overrides Fields to replace.
+ */
+function hq_test_string( array $overrides = array() ): string {
+	$data = array_merge(
+		array(
+			'url'     => 'https://hq.example.test',
+			'site_id' => HQ_TEST_SITE,
+			'secret'  => HQ_TEST_SECRET,
+		),
+		$overrides
+	);
+	return Connection::STRING_PREFIX . rtrim( strtr( base64_encode( (string) wp_json_encode( $data ) ), '+/', '-_' ), '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+}
+
+/**
+ * Sends a command to the site's HQ endpoint as HQ would.
+ *
+ * @param array $body      Request body.
+ * @param array $overrides Header overrides (timestamp, nonce, signature, site).
+ * @return WP_REST_Response
+ */
+function hq_test_command( array $body, array $overrides = array() ) {
+	$raw       = (string) wp_json_encode( $body );
+	$key       = Connection::key();
+	$timestamp = $overrides['timestamp'] ?? (string) time();
+	$nonce     = $overrides['nonce'] ?? bin2hex( random_bytes( 16 ) );
+	$site      = $overrides['site'] ?? HQ_TEST_SITE;
+	$signature = $overrides['signature'] ?? Signer::sign( $key, 'command', HQ_TEST_SITE, $timestamp, $nonce, $raw );
+
+	$request = new WP_REST_Request( 'POST', '/wproadie/v1/hq' );
+	$request->set_header( 'Content-Type', 'application/json' );
+	$request->set_header( Signer::HEADER_SITE, $site );
+	$request->set_header( Signer::HEADER_TIMESTAMP, $timestamp );
+	$request->set_header( Signer::HEADER_NONCE, $nonce );
+	$request->set_header( Signer::HEADER_SIGNATURE, $signature );
+	$request->set_body( $raw );
+
+	// Commands arrive with no WordPress login.
+	$previous = get_current_user_id();
+	wp_set_current_user( 0 );
+	try {
+		return rest_do_request( $request );
+	} finally {
+		wp_set_current_user( $previous );
+	}
+}
+
+wproadie_test(
+	'signing reproduces the protocol test vector',
+	function () {
+		$key = base64_decode( strtr( HQ_TEST_SECRET, '-_', '+/' ) . '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+		wproadie_assert_same(
+			'v1=1d0d93429950e4120cf5d9edca5275746aa674cb4cd8ea520aae73cbfd901bdf',
+			Signer::sign( $key, 'command', HQ_TEST_SITE, '1760263200', '0123456789abcdef0123456789abcdef', '{"command":"ping","args":{}}' )
+		);
+	}
+);
+
+wproadie_test(
+	'connection strings are validated',
+	function () {
+		wproadie_assert( is_array( Connection::parse( hq_test_string() ) ) );
+		wproadie_assert_error( Connection::parse( 'nonsense' ), 'wproadie_hq_invalid' );
+		wproadie_assert_error( Connection::parse( Connection::STRING_PREFIX . '!!!' ), 'wproadie_hq_invalid' );
+		wproadie_assert_error( Connection::parse( hq_test_string( array( 'url' => 'http://hq.example.test' ) ) ), 'wproadie_hq_invalid' );
+		wproadie_assert_error( Connection::parse( hq_test_string( array( 'site_id' => 'not-a-uuid' ) ) ), 'wproadie_hq_invalid' );
+		wproadie_assert_error( Connection::parse( hq_test_string( array( 'secret' => 'c2hvcnQ' ) ) ), 'wproadie_hq_invalid' );
+	}
+);
+
+wproadie_test(
+	'setup: connect to a test HQ',
+	function () {
+		$connected = Connection::connect( hq_test_string() );
+		wproadie_assert( is_array( $connected ), is_wp_error( $connected ) ? $connected->get_error_message() : '' );
+		wproadie_assert( Connection::is_connected() );
+	}
+);
+
+wproadie_test(
+	'ping answers a correctly signed command',
+	function () {
+		$response = hq_test_command( array( 'command' => 'ping' ) );
+		wproadie_assert_same( 200, $response->get_status() );
+		wproadie_assert_same( WPROADIE_VERSION, $response->get_data()['result']['version'] );
+	}
+);
+
+wproadie_test(
+	'bad, stale, replayed and foreign requests are refused',
+	function () {
+		$bad = hq_test_command( array( 'command' => 'ping' ), array( 'signature' => 'v1=' . str_repeat( '0', 64 ) ) );
+		wproadie_assert_same( 401, $bad->get_status() );
+		wproadie_assert_same( 'bad_signature', $bad->get_data()['error'] );
+
+		$stale = hq_test_command( array( 'command' => 'ping' ), array( 'timestamp' => (string) ( time() - 400 ) ) );
+		wproadie_assert_same( 'stale', $stale->get_data()['error'] );
+
+		$nonce = bin2hex( random_bytes( 16 ) );
+		wproadie_assert_same( 200, hq_test_command( array( 'command' => 'ping' ), array( 'nonce' => $nonce ) )->get_status() );
+		$again = hq_test_command( array( 'command' => 'ping' ), array( 'nonce' => $nonce ) );
+		wproadie_assert_same( 'replayed', $again->get_data()['error'] );
+
+		$foreign = hq_test_command( array( 'command' => 'ping' ), array( 'site' => '00000000-0000-4000-8000-000000000000' ) );
+		wproadie_assert_same( 'unknown_site', $foreign->get_data()['error'] );
+
+		// A signature for one purpose is useless for the other.
+		$timestamp = (string) time();
+		$nonce     = bin2hex( random_bytes( 16 ) );
+		$raw       = '{"command":"ping"}';
+		$wrong     = Signer::sign( Connection::key(), 'heartbeat', HQ_TEST_SITE, $timestamp, $nonce, $raw );
+		$crossed   = hq_test_command(
+			array( 'command' => 'ping' ),
+			array(
+				'timestamp' => $timestamp,
+				'nonce'     => $nonce,
+				'signature' => $wrong,
+			)
+		);
+		wproadie_assert_same( 'bad_signature', $crossed->get_data()['error'] );
+
+		$unknown = hq_test_command( array( 'command' => 'drop_tables' ) );
+		wproadie_assert_same( 'unknown_command', $unknown->get_data()['error'] );
+	}
+);
+
+wproadie_test(
+	'heartbeat command returns the full payload',
+	function () {
+		$result = hq_test_command( array( 'command' => 'heartbeat' ) )->get_data()['result'];
+		wproadie_assert_same( 1, $result['schema'] );
+		wproadie_assert_same( HQ_TEST_SITE, $result['site_id'] );
+		foreach ( array( 'site', 'versions', 'wproadie', 'updates', 'health', 'activity' ) as $section ) {
+			wproadie_assert( array_key_exists( $section, $result ), $section . ' missing' );
+		}
+		wproadie_assert_same( WPROADIE_VERSION, $result['versions']['wproadie'] );
+		wproadie_assert( false !== strpos( $result['site']['hq_endpoint'], 'wproadie/v1/hq' ) );
+		wproadie_assert( in_array( wp_get_current_user()->user_login, $result['wproadie']['users_with_access'], true ) );
+	}
+);
+
+wproadie_test(
+	'activity summary counts tool calls, not HQ commands',
+	function () {
+		wproadie_call( 'versions' );
+		$activity = AuditLog::activity_summary();
+		wproadie_assert_same( 'wproadie/versions', $activity['last_call_tool'] );
+		wproadie_assert_same( wp_get_current_user()->user_login, $activity['last_call_user'] );
+		wproadie_assert( $activity['calls_24h'] >= 1 );
+	}
+);
+
+wproadie_test(
+	'provision_credential: only for users with access, over HTTPS, never logged',
+	function () {
+		$login   = 'hq_test_' . wp_generate_password( 6, false );
+		$user_id = wp_create_user( $login, wp_generate_password(), $login . '@example.com' );
+		( new WP_User( $user_id ) )->set_role( 'administrator' );
+		add_filter( 'wp_is_application_passwords_available', '__return_true' );
+		try {
+			$no_access = hq_test_command(
+				array(
+					'command' => 'provision_credential',
+					'args'    => array( 'wp_user' => $login ),
+				)
+			);
+			wproadie_assert_same( 'no_access', $no_access->get_data()['error'] );
+
+			Permission::grant( $user_id );
+			$missing = hq_test_command(
+				array(
+					'command' => 'provision_credential',
+					'args'    => array( 'wp_user' => 'nobody-here' ),
+				)
+			);
+			wproadie_assert_same( 'user_not_found', $missing->get_data()['error'] );
+
+			if ( ! is_ssl() && 'local' !== wp_get_environment_type() ) {
+				$insecure = hq_test_command(
+					array(
+						'command' => 'provision_credential',
+						'args'    => array( 'wp_user' => $login ),
+					)
+				);
+				wproadie_assert_same( 'insecure', $insecure->get_data()['error'] );
+			}
+
+			add_filter( 'wproadie_hq_allow_http', '__return_true' );
+			$issued = hq_test_command(
+				array(
+					'command' => 'provision_credential',
+					'args'    => array(
+						'wp_user' => $login . '@example.com',
+						'label'   => 'Tester',
+					),
+				)
+			);
+			remove_filter( 'wproadie_hq_allow_http', '__return_true' );
+			wproadie_assert_same( 200, $issued->get_status(), wp_json_encode( $issued->get_data() ) );
+			$result = $issued->get_data()['result'];
+			wproadie_assert_same( $login, $result['username'] );
+			wproadie_assert( 24 <= strlen( str_replace( ' ', '', $result['password'] ) ) );
+
+			$listed = Credentials::list_for( $user_id );
+			wproadie_assert_same( 1, count( $listed ) );
+			wproadie_assert_same( 'WPRoadie HQ – Tester', $listed[0]['name'] );
+
+			// The password works for Basic auth and appears in no log entry.
+			// WordPress only accepts Application Passwords on API requests.
+			add_filter( 'application_password_is_api_request', '__return_true' );
+			$authed = wp_authenticate_application_password( null, $login, $result['password'] );
+			remove_filter( 'application_password_is_api_request', '__return_true' );
+			wproadie_assert( $authed instanceof WP_User, 'issued password authenticates' );
+			$log = AuditLog::query( array( 'ability' => 'hq/provision_credential' ), 1 )['rows'][0];
+			wproadie_assert( false === strpos( (string) $log->result, str_replace( ' ', '', $result['password'] ) ) && false === strpos( (string) $log->result, $result['password'] ), 'password must not be logged' );
+
+			$access = hq_test_command( array( 'command' => 'list_access' ) )->get_data()['result']['users'];
+			$mine   = wp_list_filter( $access, array( 'login' => $login ) );
+			wproadie_assert_same( 1, count( reset( $mine )['passwords'] ) );
+
+			$revoked = hq_test_command(
+				array(
+					'command' => 'revoke_credential',
+					'args'    => array(
+						'wp_user' => $login,
+						'uuid'    => $result['uuid'],
+					),
+				)
+			);
+			wproadie_assert_same( true, $revoked->get_data()['result']['revoked'] );
+			wproadie_assert_same( 0, count( Credentials::list_for( $user_id ) ) );
+		} finally {
+			remove_filter( 'wp_is_application_passwords_available', '__return_true' );
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+			wp_delete_user( $user_id );
+		}
+	}
+);
+
+wproadie_test(
+	'revoke_user removes every WPRoadie password and access; works with the kill switch on',
+	function () {
+		$login   = 'hq_leaver_' . wp_generate_password( 6, false );
+		$user_id = wp_create_user( $login, wp_generate_password(), $login . '@example.com' );
+		( new WP_User( $user_id ) )->set_role( 'administrator' );
+		Permission::grant( $user_id );
+		add_filter( 'wp_is_application_passwords_available', '__return_true' );
+		Credentials::create( $user_id, 'one' );
+		Credentials::create( $user_id, 'two' );
+		// Not a WPRoadie password: left alone.
+		WP_Application_Passwords::create_new_application_password( $user_id, array( 'name' => 'Other app' ) );
+
+		Settings::set( 'disabled', true );
+		try {
+			$blocked = hq_test_command(
+				array(
+					'command' => 'provision_credential',
+					'args'    => array( 'wp_user' => $login ),
+				)
+			);
+			wproadie_assert_same( 'disabled', $blocked->get_data()['error'] );
+
+			$result = hq_test_command(
+				array(
+					'command' => 'revoke_user',
+					'args'    => array( 'wp_user' => $login ),
+				)
+			)->get_data()['result'];
+			wproadie_assert_same( 2, $result['passwords_revoked'] );
+			wproadie_assert( ! Permission::can_connect( $user_id ) );
+			wproadie_assert_same( 1, count( WP_Application_Passwords::get_user_application_passwords( $user_id ) ) );
+		} finally {
+			Settings::set( 'disabled', false );
+			remove_filter( 'wp_is_application_passwords_available', '__return_true' );
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+			wp_delete_user( $user_id );
+		}
+	}
+);
+
+wproadie_test(
+	'heartbeat is signed and posted to HQ; a rejection is recorded',
+	function () {
+		$captured = array();
+		$reply    = array(
+			'code' => 200,
+			'body' => '{"ok":true}',
+		);
+		$fake     = function ( $pre, $args, $url ) use ( &$captured, &$reply ) {
+			$captured = array(
+				'url'  => $url,
+				'args' => $args,
+			);
+			return array(
+				'headers'  => array(),
+				'body'     => $reply['body'],
+				'response' => array(
+					'code'    => $reply['code'],
+					'message' => '',
+				),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $fake, 10, 3 );
+		try {
+			wproadie_assert_same( true, Heartbeat::send() );
+			wproadie_assert_same( 'https://hq.example.test/api/v1/heartbeat', $captured['url'] );
+
+			$headers = $captured['args']['headers'];
+			$body    = $captured['args']['body'];
+			wproadie_assert_same( HQ_TEST_SITE, $headers[ Signer::HEADER_SITE ] );
+			$expected = Signer::sign( Connection::key(), 'heartbeat', HQ_TEST_SITE, $headers[ Signer::HEADER_TIMESTAMP ], $headers[ Signer::HEADER_NONCE ], $body );
+			wproadie_assert_same( $expected, $headers[ Signer::HEADER_SIGNATURE ] );
+			wproadie_assert_same( HQ_TEST_SITE, json_decode( $body, true )['site_id'] );
+			wproadie_assert_same( true, Heartbeat::last_result()['ok'] );
+
+			$reply = array(
+				'code' => 401,
+				'body' => '{"error":"bad_signature"}',
+			);
+			$sent  = Heartbeat::send();
+			wproadie_assert_error( $sent, 'wproadie_hq_rejected' );
+			wproadie_assert( false !== strpos( $sent->get_error_message(), 'bad_signature' ) );
+			wproadie_assert_same( false, Heartbeat::last_result()['ok'] );
+		} finally {
+			remove_filter( 'pre_http_request', $fake, 10 );
+		}
+	}
+);
+
+wproadie_test(
+	'teardown: disconnect from the test HQ',
+	function () {
+		Connection::disconnect();
+		Heartbeat::unschedule();
+		delete_option( Heartbeat::LAST_RESULT );
+		wproadie_assert( ! Connection::is_connected() );
+		$response = hq_test_command( array( 'command' => 'ping' ), array( 'signature' => 'v1=x' ) );
+		wproadie_assert_same( 'unknown_site', $response->get_data()['error'] );
+	}
+);

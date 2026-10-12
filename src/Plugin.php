@@ -12,6 +12,9 @@ use WPRoadie\Admin\Menu;
 use WPRoadie\Admin\RestApi;
 use WPRoadie\Admin\Updater;
 use WPRoadie\Admin\WpCliCommand;
+use WPRoadie\Hq\Commands as HqCommands;
+use WPRoadie\Hq\Heartbeat as HqHeartbeat;
+use WPRoadie\Hq\HqCliCommand;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Safety\Stealth;
@@ -66,12 +69,17 @@ final class Plugin {
 		( new RestApi() )->hooks();
 		( new Updater() )->hooks();
 		( new Stealth() )->hooks();
+		// HQ keeps working with the kill switch on: it reports the switch,
+		// and its commands can still take access away (never grant it).
+		( new HqHeartbeat() )->hooks();
+		( new HqCommands() )->hooks();
 		if ( is_admin() ) {
 			( new Menu() )->hooks();
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'wproadie', WpCliCommand::class );
+			\WP_CLI::add_command( 'wproadie hq', HqCliCommand::class );
 		}
 	}
 
@@ -130,5 +138,6 @@ final class Plugin {
 	public static function deactivate(): void {
 		// Data is kept on deactivation; uninstall.php removes it.
 		wp_clear_scheduled_hook( self::PRUNE_HOOK );
+		HqHeartbeat::unschedule();
 	}
 }

@@ -29,6 +29,11 @@ foreach ( Permission::granted_users() as $wproadie_user ) {
 AuditLog::drop();
 delete_option( Settings::OPTION );
 wp_clear_scheduled_hook( 'wproadie_prune_log' );
+wp_clear_scheduled_hook( 'wproadie_hq_heartbeat' );
+wp_clear_scheduled_hook( 'wproadie_hq_heartbeat_soon' );
+delete_option( 'wproadie_hq' );
+delete_option( 'wproadie_hq_last_heartbeat' );
+delete_transient( 'wproadie_hq_health' );
 delete_site_transient( 'wproadie_update_release' );
 
 // wp-content/wproadie is left in place: it may hold files the team wrote
