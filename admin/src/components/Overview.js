@@ -10,6 +10,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { errorMessage } from '../api';
 import Confirm from './Confirm';
 import HqCard from './HqCard';
+import SetupCard from './SetupCard';
 
 const SOURCES = {
 	constant: __( 'set by WPROADIE_MODE in wp-config.php', 'wproadie' ),
@@ -17,7 +18,21 @@ const SOURCES = {
 	environment: __( 'detected from the environment type', 'wproadie' ),
 };
 
-export default function Overview( { status, saveSettings } ) {
+function adapterState( status ) {
+	if ( status.adapter.available ) {
+		return status.adapter.version;
+	}
+	const action = status.setup?.adapter?.action;
+	if ( action === 'activate' ) {
+		return __( 'Installed, not active', 'wproadie' );
+	}
+	if ( action === 'update' || action === 'manual' ) {
+		return __( 'Too old', 'wproadie' );
+	}
+	return __( 'Missing', 'wproadie' );
+}
+
+export default function Overview( { status, refresh, saveSettings } ) {
 	const [ confirming, setConfirming ] = useState( false );
 	const [ busy, setBusy ] = useState( false );
 	const [ error, setError ] = useState( null );
@@ -43,24 +58,29 @@ export default function Overview( { status, saveSettings } ) {
 				? __( 'Off (kill switch is on)', 'wproadie' )
 				: __( 'On', 'wproadie' ),
 		],
-		[ __( 'Version', 'wproadie' ), status.version ],
 		[
-			__( 'MCP Adapter', 'wproadie' ),
-			status.adapter.available
-				? status.adapter.version
-				: __( 'Missing', 'wproadie' ),
+			__( 'MCP Adapter (required plugin)', 'wproadie' ),
+			adapterState( status ),
 		],
 		[
 			__( 'Mode', 'wproadie' ),
-			`${ mode?.label } — ${ SOURCES[ status.mode.source ] } ("${ status.mode.environment }")`,
+			`${ mode?.label } — ${ SOURCES[ status.mode.source ] }`,
 		],
 		[
-			__( 'Endpoint', 'wproadie' ),
+			__( 'Tools the AI can use', 'wproadie' ),
+			status.disabled ? '—' : String( status.exposed ),
+		],
+	];
+
+	const advanced = [
+		[ __( 'WPRoadie version', 'wproadie' ), status.version ],
+		[
+			__( 'MCP address (endpoint)', 'wproadie' ),
 			<code key="e">{ status.endpoint }</code>,
 		],
 		[
-			__( 'Tools the AI sees', 'wproadie' ),
-			status.disabled ? '—' : String( status.exposed ),
+			__( 'Environment type', 'wproadie' ),
+			<code key="t">{ status.mode.environment }</code>,
 		],
 		[
 			__( 'Rate limit', 'wproadie' ),
@@ -78,8 +98,22 @@ export default function Overview( { status, saveSettings } ) {
 		],
 	];
 
+	const table = ( items ) => (
+		<table className="widefat striped wproadie-status">
+			<tbody>
+				{ items.map( ( [ label, value ] ) => (
+					<tr key={ label }>
+						<th scope="row">{ label }</th>
+						<td>{ value }</td>
+					</tr>
+				) ) }
+			</tbody>
+		</table>
+	);
+
 	return (
 		<>
+			<SetupCard setup={ status.setup } onChanged={ refresh } />
 			<Card>
 				<CardHeader>
 					<h2>{ __( 'Status', 'wproadie' ) }</h2>
@@ -93,16 +127,11 @@ export default function Overview( { status, saveSettings } ) {
 							{ error }
 						</Notice>
 					) }
-					<table className="widefat striped wproadie-status">
-						<tbody>
-							{ rows.map( ( [ label, value ] ) => (
-								<tr key={ label }>
-									<th scope="row">{ label }</th>
-									<td>{ value }</td>
-								</tr>
-							) ) }
-						</tbody>
-					</table>
+					{ table( rows ) }
+					<details className="wproadie-advanced">
+						<summary>{ __( 'Advanced', 'wproadie' ) }</summary>
+						{ table( advanced ) }
+					</details>
 					<p>
 						{ status.disabled_by_constant && (
 							<em>
@@ -141,7 +170,7 @@ export default function Overview( { status, saveSettings } ) {
 						onCancel={ () => setConfirming( false ) }
 					>
 						{ __(
-							'Shut off WPRoadie for every AI client on this site?',
+							'Shut off WPRoadie for every AI app on this site?',
 							'wproadie'
 						) }
 					</Confirm>

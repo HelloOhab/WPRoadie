@@ -166,7 +166,7 @@ export default function Tools( { status, saveSettings } ) {
 						__nextHasNoMarginBottom
 						label={ __( 'Stealth mode', 'wproadie' ) }
 						help={ __(
-							'Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except WPRoadie users. The AI connection, log and kill switch keep working.',
+							'Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except people with AI access, and hides the setup steps from other administrators. The AI connection, log and kill switch keep working.',
 							'wproadie'
 						) }
 						checked={ status.stealth }

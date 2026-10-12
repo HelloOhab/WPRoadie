@@ -34,12 +34,12 @@ export default function Access() {
 	return (
 		<Card>
 			<CardHeader>
-				<h2>{ __( 'Who can connect', 'wproadie' ) }</h2>
+				<h2>{ __( 'Who has AI access', 'wproadie' ) }</h2>
 			</CardHeader>
 			<CardBody>
 				<p>
 					{ __(
-						'Only administrators added here can connect AI clients or open this screen. Being an administrator is not enough on its own.',
+						'Only the administrators listed here can use AI on this site (through WPRoadie HQ, Claude or another AI app) or open this screen. Being an administrator is not enough on its own.',
 						'wproadie'
 					) }
 				</p>
@@ -90,7 +90,7 @@ export default function Access() {
 					<div className="wproadie-inline-form">
 						<SelectControl
 							__nextHasNoMarginBottom
-							label={ __( 'Give access to', 'wproadie' ) }
+							label={ __( 'Give AI access to', 'wproadie' ) }
 							value={ selected }
 							options={ [
 								{

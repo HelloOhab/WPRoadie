@@ -4,6 +4,29 @@ const BASE = '/wproadie/v1';
 
 export const api = {
 	status: () => apiFetch( { path: `${ BASE }/status` } ),
+	setup: () => apiFetch( { path: `${ BASE }/setup` } ),
+	grantSelf: () =>
+		apiFetch( { path: `${ BASE }/access/me`, method: 'POST' } ),
+	installAdapter: () =>
+		apiFetch( { path: `${ BASE }/adapter/install`, method: 'POST' } ),
+	hqConnect: ( connectionString ) =>
+		apiFetch( {
+			path: `${ BASE }/hq/connect`,
+			method: 'POST',
+			data: { connection_string: connectionString },
+		} ),
+	hqPair: ( hqUrl ) =>
+		apiFetch( {
+			path: `${ BASE }/hq/pair`,
+			method: 'POST',
+			data: { hq_url: hqUrl },
+		} ),
+	hqPairFinish: ( code, state ) =>
+		apiFetch( {
+			path: `${ BASE }/hq/pair/finish`,
+			method: 'POST',
+			data: { code, state },
+		} ),
 	saveSettings: ( data ) =>
 		apiFetch( { path: `${ BASE }/settings`, method: 'POST', data } ),
 	credentials: () => apiFetch( { path: `${ BASE }/credentials` } ),

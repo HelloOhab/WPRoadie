@@ -24,6 +24,19 @@ final class Notices {
 		add_action( 'admin_notices', array( $this, 'render' ) );
 		add_action( 'network_admin_notices', array( $this, 'render' ) );
 		add_action( 'admin_post_' . AdapterInstaller::ACTION, array( AdapterInstaller::class, 'handle_post' ) );
+		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
+	}
+
+	/**
+	 * Lets WordPress remove the result code from the address bar once shown.
+	 *
+	 * @param string[] $args Query args WordPress removes.
+	 * @return string[]
+	 */
+	public function removable_query_args( $args ) {
+		$args   = is_array( $args ) ? $args : array();
+		$args[] = self::QUERY_ARG;
+		return $args;
 	}
 
 	/**
@@ -33,9 +46,9 @@ final class Notices {
 	 */
 	public static function messages(): array {
 		return array(
-			'adapter_installed'  => array( 'success', __( 'The MCP Adapter is installed and active. AI clients can now connect to WPRoadie.', 'wproadie' ) ),
-			'adapter_activated'  => array( 'success', __( 'The MCP Adapter is active. AI clients can now connect to WPRoadie.', 'wproadie' ) ),
-			'adapter_updated'    => array( 'success', __( 'The MCP Adapter is updated and active. AI clients can now connect to WPRoadie.', 'wproadie' ) ),
+			'adapter_installed'  => array( 'success', __( 'The MCP Adapter is installed and active. AI apps can now connect to this site.', 'wproadie' ) ),
+			'adapter_activated'  => array( 'success', __( 'The MCP Adapter is active. AI apps can now connect to this site.', 'wproadie' ) ),
+			'adapter_updated'    => array( 'success', __( 'The MCP Adapter is updated and active. AI apps can now connect to this site.', 'wproadie' ) ),
 			'adapter_ready'      => array( 'success', __( 'The MCP Adapter was already set up.', 'wproadie' ) ),
 			'adapter_file_mods'  => array( 'error', __( 'This site does not allow installing plugins from wp-admin. Ask your host to install the MCP Adapter plugin, or install it manually.', 'wproadie' ) ),
 			'adapter_multisite'  => array( 'error', __( 'On a multisite network, a network administrator has to install and activate the MCP Adapter under Network Admin → Plugins.', 'wproadie' ) ),
@@ -105,7 +118,7 @@ final class Notices {
 				<?php
 				printf(
 					/* translators: %s: minimum MCP Adapter version. */
-					esc_html__( 'WPRoadie needs the free MCP Adapter plugin (version %s or newer) to be installed and active. AI clients cannot connect until it is.', 'wproadie' ),
+					esc_html__( 'WPRoadie needs the free MCP Adapter plugin (version %s or newer) to be installed and active. AI apps cannot connect to this site until it is.', 'wproadie' ),
 					esc_html( WPROADIE_MCP_ADAPTER_MIN )
 				);
 				?>

@@ -62,7 +62,7 @@ export default function Connect( { status } ) {
 		<>
 			<Card>
 				<CardHeader>
-					<h2>{ __( 'Connect an AI client', 'wproadie' ) }</h2>
+					<h2>{ __( 'Connect an AI app', 'wproadie' ) }</h2>
 				</CardHeader>
 				<CardBody>
 					{ error && (
@@ -107,7 +107,7 @@ export default function Connect( { status } ) {
 						<>
 							<p>
 								{ __(
-									'Creates a WordPress Application Password for you and shows the config to paste into your AI client. The AI acts as you, so everything it does is logged under your name.',
+									'Using WPRoadie HQ? Add HQ to Claude as a connector instead (HQ shows how); you do not need a password from here. To connect an AI app straight to this site, create a private password below (a WordPress Application Password) and paste the settings it shows into the app. The AI acts as you, so everything it does is logged under your name.',
 									'wproadie'
 								) }
 							</p>

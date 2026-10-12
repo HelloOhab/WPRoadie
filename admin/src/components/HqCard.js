@@ -4,7 +4,6 @@ import {
 	CardBody,
 	CardHeader,
 	Notice,
-	TextControl,
 } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
@@ -12,8 +11,8 @@ import { errorMessage } from '../api';
 import Confirm from './Confirm';
 
 /**
- * Connection to WPRoadie HQ: status, connect with a connection string,
- * send a heartbeat now, disconnect.
+ * Connection to WPRoadie HQ once connected: status, send a heartbeat now,
+ * disconnect. Connecting is a step of the setup checklist.
  *
  * @param {Object}                    props
  * @param {Object}                    props.status       Status from the REST API.
@@ -21,7 +20,6 @@ import Confirm from './Confirm';
  */
 export default function HqCard( { status, saveSettings } ) {
 	const hq = status.hq;
-	const [ value, setValue ] = useState( '' );
 	const [ busy, setBusy ] = useState( false );
 	const [ error, setError ] = useState( null );
 	const [ confirming, setConfirming ] = useState( false );
@@ -30,12 +28,14 @@ export default function HqCard( { status, saveSettings } ) {
 		setBusy( true );
 		setError( null );
 		return saveSettings( data )
-			.then( () => setValue( '' ) )
 			.catch( ( err ) => setError( errorMessage( err ) ) )
 			.finally( () => setBusy( false ) );
 	};
 
 	const last = hq.last;
+	if ( ! hq.connected ) {
+		return null;
+	}
 
 	return (
 		<Card>
@@ -48,111 +48,79 @@ export default function HqCard( { status, saveSettings } ) {
 						{ error }
 					</Notice>
 				) }
-				{ hq.connected ? (
-					<>
-						<p>
-							{ sprintf(
-								/* translators: %s: HQ address */
-								__(
-									'Connected to %s. This site reports its status hourly; HQ can issue and revoke connection passwords for people who already have access here.',
-									'wproadie'
-								),
-								hq.url
-							) }
-						</p>
-						{ last && (
-							<p>
-								{ last.ok
-									? sprintf(
-											/* translators: %s: date and time */
-											__(
-												'Last heartbeat accepted %s.',
-												'wproadie'
-											),
-											new Date( last.at ).toLocaleString()
-										)
-									: sprintf(
-											/* translators: 1: date and time, 2: error */
-											__(
-												'Last heartbeat failed %1$s: %2$s',
-												'wproadie'
-											),
-											new Date(
-												last.at
-											).toLocaleString(),
-											last.error
-										) }
-							</p>
+				<>
+					<p>
+						{ sprintf(
+							/* translators: %s: HQ address */
+							__(
+								'Connected to %s. This site reports its status to HQ every hour. HQ can connect people who already have AI access here, and disconnect them.',
+								'wproadie'
+							),
+							hq.url
 						) }
-						<div className="wproadie-inline-form">
-							<Button
-								variant="secondary"
-								isBusy={ busy }
-								disabled={ busy }
-								onClick={ () => save( { hq_heartbeat: true } ) }
-							>
-								{ __( 'Send heartbeat now', 'wproadie' ) }
-							</Button>
-							{ hq.from_constants ? (
-								<em>
-									{ __(
-										'Configured by constants in wp-config.php.',
-										'wproadie'
-									) }
-								</em>
-							) : (
-								<Button
-									variant="link"
-									isDestructive
-									onClick={ () => setConfirming( true ) }
-								>
-									{ __( 'Disconnect', 'wproadie' ) }
-								</Button>
-							) }
-						</div>
-						<Confirm
-							isOpen={ confirming }
-							onConfirm={ () => {
-								setConfirming( false );
-								save( { hq_disconnect: true } );
-							} }
-							onCancel={ () => setConfirming( false ) }
-						>
-							{ __(
-								'Stop reporting to HQ? HQ will show this site as offline until it is connected again.',
-								'wproadie'
-							) }
-						</Confirm>
-					</>
-				) : (
-					<>
+					</p>
+					{ last && (
 						<p>
-							{ __(
-								'Paste the connection string HQ showed when this site was added. You can also run `wp wproadie hq connect` over SSH.',
-								'wproadie'
-							) }
+							{ last.ok
+								? sprintf(
+										/* translators: %s: date and time */
+										__(
+											'Last status report accepted %s.',
+											'wproadie'
+										),
+										new Date( last.at ).toLocaleString()
+									)
+								: sprintf(
+										/* translators: 1: date and time, 2: error */
+										__(
+											'Last status report failed %1$s: %2$s',
+											'wproadie'
+										),
+										new Date( last.at ).toLocaleString(),
+										last.error
+									) }
 						</p>
-						<div className="wproadie-inline-form">
-							<TextControl
-								__nextHasNoMarginBottom
-								label={ __( 'Connection string', 'wproadie' ) }
-								placeholder="wproadie-hq:v1:…"
-								value={ value }
-								onChange={ setValue }
-							/>
+					) }
+					<div className="wproadie-inline-form">
+						<Button
+							variant="secondary"
+							isBusy={ busy }
+							disabled={ busy }
+							onClick={ () => save( { hq_heartbeat: true } ) }
+						>
+							{ __( 'Report status now', 'wproadie' ) }
+						</Button>
+						{ hq.from_constants ? (
+							<em>
+								{ __(
+									'Configured by constants in wp-config.php.',
+									'wproadie'
+								) }
+							</em>
+						) : (
 							<Button
-								variant="primary"
-								isBusy={ busy }
-								disabled={ busy || ! value.trim() }
-								onClick={ () =>
-									save( { hq_connect: value.trim() } )
-								}
+								variant="link"
+								isDestructive
+								onClick={ () => setConfirming( true ) }
 							>
-								{ __( 'Connect', 'wproadie' ) }
+								{ __( 'Disconnect', 'wproadie' ) }
 							</Button>
-						</div>
-					</>
-				) }
+						) }
+					</div>
+					<Confirm
+						isOpen={ confirming }
+						onConfirm={ () => {
+							setConfirming( false );
+							save( { hq_disconnect: true } );
+						} }
+						onCancel={ () => setConfirming( false ) }
+					>
+						{ __(
+							'Stop reporting to HQ? HQ will show this site as offline until it is connected again.',
+							'wproadie'
+						) }
+					</Confirm>
+				</>
 			</CardBody>
 		</Card>
 	);
