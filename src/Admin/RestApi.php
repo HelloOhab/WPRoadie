@@ -17,6 +17,7 @@ use WP_REST_Server;
 use WPRoadie\Abilities\Registry;
 use WPRoadie\Hq\Connection as HqConnection;
 use WPRoadie\Hq\Heartbeat as HqHeartbeat;
+use WPRoadie\Hq\Pairing as HqPairing;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Log\Undo;
 use WPRoadie\Plugin;
@@ -81,6 +82,141 @@ final class RestApi {
 			}
 			register_rest_route( self::NAMESPACE_V1, $route, $config );
 		}
+
+		// Setup steps: also open to administrators who do not have AI
+		// access yet, while Permission::can_set_up() allows it.
+		$setup = array(
+			'/setup'           => array( WP_REST_Server::READABLE, 'get_setup', 'can_set_up' ),
+			'/access/me'       => array( WP_REST_Server::CREATABLE, 'grant_self', 'can_set_up' ),
+			'/adapter/install' => array( WP_REST_Server::CREATABLE, 'install_adapter', 'can_set_up' ),
+			'/hq/connect'      => array( WP_REST_Server::CREATABLE, 'hq_connect', 'can_change_hq' ),
+			'/hq/pair'         => array( WP_REST_Server::CREATABLE, 'hq_pair', 'can_change_hq' ),
+			'/hq/pair/finish'  => array( WP_REST_Server::CREATABLE, 'hq_pair_finish', 'can_change_hq' ),
+		);
+		foreach ( $setup as $route => $endpoint ) {
+			register_rest_route(
+				self::NAMESPACE_V1,
+				$route,
+				array(
+					'methods'             => $endpoint[0],
+					'callback'            => array( $this, $endpoint[1] ),
+					'permission_callback' => array( $this, $endpoint[2] ),
+				)
+			);
+		}
+	}
+
+	/**
+	 * @return true|WP_Error
+	 */
+	public function can_set_up() {
+		if ( Permission::can_set_up() ) {
+			return true;
+		}
+		return new WP_Error( 'wproadie_forbidden', __( 'You are not allowed to set up WPRoadie.', 'wproadie' ), array( 'status' => rest_authorization_required_code() ) );
+	}
+
+	/**
+	 * Connecting to HQ: people with AI access, or, while the site is not
+	 * connected yet, anyone allowed to set WPRoadie up. Only people with
+	 * access can replace an existing connection.
+	 *
+	 * @return true|WP_Error
+	 */
+	public function can_change_hq() {
+		if ( Permission::can_manage() || ( Permission::can_set_up() && ! HqConnection::is_connected() ) ) {
+			return true;
+		}
+		return new WP_Error( 'wproadie_forbidden', __( 'Only people with AI access on this site can change its HQ connection.', 'wproadie' ), array( 'status' => rest_authorization_required_code() ) );
+	}
+
+	/**
+	 * The setup checklist: MCP Adapter, HQ, the current user's access.
+	 */
+	public static function setup_data(): array {
+		$adapter    = AdapterInstaller::status();
+		$has_access = Permission::can_connect();
+		$connected  = HqConnection::is_connected();
+		return array(
+			'complete' => $adapter['available'] && $connected && $has_access,
+			'disabled' => Settings::is_disabled(),
+			'user'     => wp_get_current_user()->user_login,
+			'adapter'  => $adapter,
+			'hq'       => array(
+				'connected'      => $connected,
+				'url'            => $connected ? HqConnection::get()['url'] : null,
+				'from_constants' => HqConnection::from_constants(),
+				'default_url'    => HqPairing::default_url(),
+				'can_change'     => true === ( new self() )->can_change_hq(),
+			),
+			'access'   => array(
+				'has_access' => $has_access,
+				'can_grant'  => ! $has_access && Permission::can_set_up() && current_user_can( 'manage_options' ),
+			),
+		);
+	}
+
+	public function get_setup(): array {
+		return self::setup_data();
+	}
+
+	/**
+	 * "Give me access": an administrator gives themselves AI access.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function grant_self() {
+		$user_id = get_current_user_id();
+		$already = Permission::can_connect( $user_id );
+		if ( ! $already && ! Permission::grant( $user_id ) ) {
+			return new WP_Error( 'wproadie_not_admin', __( 'Only administrators can be given access.', 'wproadie' ), array( 'status' => 400 ) );
+		}
+		if ( ! $already ) {
+			AuditLog::record( 'admin/grant-access', array( 'user' => wp_get_current_user()->user_login ), array( 'granted' => true ), 0 );
+		}
+		return self::setup_data();
+	}
+
+	/**
+	 * @return array|WP_Error
+	 */
+	public function install_adapter() {
+		return AdapterInstaller::run();
+	}
+
+	/**
+	 * Connects with a pasted connection string.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function hq_connect( WP_REST_Request $request ) {
+		$connected = HqPairing::connect( (string) $request->get_param( 'connection_string' ) );
+		if ( is_wp_error( $connected ) ) {
+			return $connected;
+		}
+		return array(
+			'ok'        => true,
+			'connected' => true,
+			'heartbeat' => true === $connected['heartbeat'],
+		);
+	}
+
+	/**
+	 * Starts the Connect to HQ button flow.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function hq_pair( WP_REST_Request $request ) {
+		return HqPairing::start( (string) $request->get_param( 'hq_url' ) );
+	}
+
+	/**
+	 * Finishes it when HQ sends the browser back.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function hq_pair_finish( WP_REST_Request $request ) {
+		return HqPairing::finish( (string) $request->get_param( 'code' ), (string) $request->get_param( 'state' ) );
 	}
 
 	/**
@@ -162,6 +298,7 @@ final class RestApi {
 			),
 			'user'                 => wp_get_current_user()->user_login,
 			'hq'                   => self::hq_status(),
+			'setup'                => self::setup_data(),
 		);
 	}
 
@@ -210,12 +347,10 @@ final class RestApi {
 			Settings::set( 'disabled', (bool) $params['disabled'] );
 		}
 		if ( ! empty( $params['hq_connect'] ) && is_string( $params['hq_connect'] ) ) {
-			$connected = HqConnection::connect( $params['hq_connect'] );
+			$connected = HqPairing::connect( $params['hq_connect'] );
 			if ( is_wp_error( $connected ) ) {
 				return $connected;
 			}
-			HqHeartbeat::ensure_scheduled();
-			HqHeartbeat::send();
 		}
 		if ( ! empty( $params['hq_disconnect'] ) && ! HqConnection::from_constants() ) {
 			HqConnection::disconnect();
