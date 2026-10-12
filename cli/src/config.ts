@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export type PasswordSource = 'keychain' | 'command' | 'none';
+export type PasswordSource = 'keychain' | 'command' | 'hq' | 'none';
 
 export interface Site {
   /** Short slug, e.g. "smith-dental". Unique, used on the command line. */
@@ -25,12 +25,26 @@ export interface Site {
   password: PasswordSource;
   /** Shell command that prints the password, when password === "command". */
   passwordCommand?: string;
+  /** HQ's ID for the site, when it was synced from WPRoadie HQ. */
+  hqSiteId?: string;
   addedAt?: string;
+}
+
+/** Where the HQ API token comes from. Never the token itself. */
+export type TokenSource = 'keychain' | 'command' | 'env';
+
+export interface HqConfig {
+  /** HQ base URL, e.g. https://hq.rhythmco.com */
+  url: string;
+  token: TokenSource;
+  /** Shell command that prints the token, when token === "command". */
+  tokenCommand?: string;
 }
 
 export interface Registry {
   version: 1;
   sites: Site[];
+  hq?: HqConfig;
 }
 
 export function configPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -59,10 +73,25 @@ export function loadRegistry(path: string = configPath()): Registry {
   if (!Array.isArray(sites)) {
     throw new Error(`The site registry at ${path} is not valid (missing "sites" array).`);
   }
-  return {
+  const registry: Registry = {
     version: 1,
     sites: sites.map((s) => normalizeSite(s as Partial<Site>)),
   };
+  const hq = normalizeHq((data as { hq?: unknown }).hq);
+  if (hq) registry.hq = hq;
+  return registry;
+}
+
+function normalizeHq(raw: unknown): HqConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const h = raw as Partial<HqConfig>;
+  if (!h.url) return undefined;
+  const hq: HqConfig = {
+    url: String(h.url),
+    token: h.token === 'command' || h.token === 'env' ? h.token : 'keychain',
+  };
+  if (h.tokenCommand) hq.tokenCommand = String(h.tokenCommand);
+  return hq;
 }
 
 function normalizeSite(s: Partial<Site>): Site {
@@ -72,8 +101,9 @@ function normalizeSite(s: Partial<Site>): Site {
     url: String(s.url ?? ''),
     endpoint: String(s.endpoint ?? ''),
     user: String(s.user ?? ''),
-    password: s.password === 'keychain' || s.password === 'command' ? s.password : 'none',
+    password: s.password === 'keychain' || s.password === 'command' || s.password === 'hq' ? s.password : 'none',
   };
+  if (s.hqSiteId) site.hqSiteId = String(s.hqSiteId);
   if (s.displayName) site.displayName = String(s.displayName);
   if (s.passwordCommand) site.passwordCommand = String(s.passwordCommand);
   if (s.addedAt) site.addedAt = String(s.addedAt);
@@ -91,6 +121,8 @@ export function saveRegistry(registry: Registry, path: string = configPath()): v
   }
   // Only known fields are written (normalizeSite), so nothing secret can slip in.
   const clean: Registry = { version: 1, sites: registry.sites.map((s) => normalizeSite(s)) };
+  const hq = normalizeHq(registry.hq);
+  if (hq) clean.hq = hq;
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(clean, null, 2) + '\n', { mode: 0o600 });
   chmodSync(tmp, 0o600);

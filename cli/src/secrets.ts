@@ -124,7 +124,7 @@ export function runPasswordCommand(command: string, opts: RunOptions = {}): Prom
   });
 }
 
-export type ResolvedFrom = 'env' | 'command' | 'keychain';
+export type ResolvedFrom = 'env' | 'command' | 'keychain' | 'hq';
 
 /** Gets a site's Application Password, or throws a SecretError saying how to set one. */
 export async function getPassword(site: Site, opts: RunOptions = {}): Promise<{ password: string; from: ResolvedFrom }> {
@@ -138,6 +138,15 @@ export async function getPassword(site: Site, opts: RunOptions = {}): Promise<{ 
       return { password: await runPasswordCommand(site.passwordCommand, opts), from: 'command' };
     } catch (err) {
       throw new SecretError(`Could not get the password for ${site.name}: ${(err as Error).message}`);
+    }
+  }
+  if (site.password === 'hq') {
+    // Imported lazily: hq.ts imports this module.
+    const { hqPassword } = await import('./hq.js');
+    try {
+      return { password: (await hqPassword(site)).password, from: 'hq' };
+    } catch (err) {
+      throw new SecretError((err as Error).message);
     }
   }
   if (site.password === 'keychain') {
@@ -163,5 +172,6 @@ export function describePasswordSource(site: Site): string {
   if (process.env[passwordEnvVar(site.name)]) return `env (${passwordEnvVar(site.name)})`;
   if (site.password === 'command') return `command: ${site.passwordCommand ?? ''}`;
   if (site.password === 'keychain') return 'keychain';
+  if (site.password === 'hq') return 'WPRoadie HQ';
   return 'not set';
 }
