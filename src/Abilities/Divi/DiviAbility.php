@@ -1,0 +1,185 @@
+<?php
+/**
+ * Base class for the Divi abilities: group, availability, the post and
+ * module arguments they share, and saving an edited page with undo.
+ *
+ * Abstract, so the Registry never loads it as an ability itself.
+ *
+ * @package WPRoadie
+ */
+
+namespace WPRoadie\Abilities\Divi;
+
+use WP_Post;
+use WPRoadie\Abilities\AbilityBase;
+use WPRoadie\Log\Undo;
+
+defined( 'ABSPATH' ) || exit;
+
+abstract class DiviAbility extends AbilityBase {
+
+	public function group(): string {
+		return 'divi';
+	}
+
+	public function is_available(): bool {
+		return Divi::is_active();
+	}
+
+	public function unavailable_reason(): string {
+		return Divi::is_active() ? '' : Divi::unavailable_reason();
+	}
+
+	/**
+	 * Tools that take a post ID need edit_post on it, reads included:
+	 * outlines show drafts and private pages.
+	 *
+	 * @param array $input Validated input.
+	 */
+	protected function permission( array $input ): bool {
+		if ( empty( $input['id'] ) ) {
+			return true;
+		}
+		$post = get_post( (int) $input['id'] );
+		if ( ! $post ) {
+			// Reported as not found by execute().
+			return true;
+		}
+		return current_user_can( 'edit_post', $post->ID );
+	}
+
+	/**
+	 * Schema for the page ID.
+	 */
+	protected static function id_property(): array {
+		return array(
+			'type'        => 'integer',
+			'minimum'     => 1,
+			'description' => __( 'ID of the Divi page, post, library layout or Theme Builder layout (from divi-list-pages, divi-list-layouts or divi-list-theme-builder).', 'wproadie' ),
+		);
+	}
+
+	/**
+	 * Schema for addressing one module: path, admin label or CSS ID.
+	 */
+	protected static function module_properties(): array {
+		return array(
+			'path'   => array(
+				'type'        => 'string',
+				'pattern'     => '^[0-9]+(\.[0-9]+)*$',
+				'description' => __( 'Module path from divi-get-page, e.g. "0.1.0.2" = section 0, row 1, column 0, module 2. Sections, rows and columns have paths too.', 'wproadie' ),
+			),
+			'label'  => array(
+				'type'        => 'string',
+				'maxLength'   => 200,
+				'description' => __( 'Instead of path: the module\'s admin label (case-insensitive; must be unique on the page).', 'wproadie' ),
+			),
+			'css_id' => array(
+				'type'        => 'string',
+				'maxLength'   => 200,
+				'description' => __( 'Instead of path: the module\'s CSS ID.', 'wproadie' ),
+			),
+		);
+	}
+
+	/**
+	 * Refuses edits inside a global element: Divi renders those from the
+	 * Divi Library item, so a change on the page would not show (and is
+	 * overwritten the next time the global item is saved).
+	 *
+	 * @param Document $doc        Page.
+	 * @param array    $entry      Entry from Document::all().
+	 * @param bool     $allow_root Whether the global element itself may be
+	 *                             handled as a whole (moved, removed, copied).
+	 * @return true|\WP_Error
+	 */
+	protected function check_not_global( Document $doc, array $entry, bool $allow_root = false ) {
+		if ( '' === $entry['global'] ) {
+			return true;
+		}
+		if ( $allow_root && $doc->global_id( $entry['node'] ) === $entry['global'] ) {
+			return true;
+		}
+		return Divi::error(
+			'global_module',
+			sprintf(
+				/* translators: %d: layout post ID. */
+				__( 'This is (or is inside) a global Divi Library item (layout ID %1$d). Divi shows the library version on every page that uses it, so a change here would not show. Edit the library item instead: divi-get-page and divi-update-module with id %2$d (that changes it everywhere it is used).', 'wproadie' ),
+				(int) $entry['global'],
+				(int) $entry['global']
+			),
+			409
+		);
+	}
+
+	/**
+	 * Saves an edited page: records undo (a revision is saved too), writes
+	 * through wp_update_post() and clears Divi's caches for it.
+	 *
+	 * @param WP_Post  $post Post being changed.
+	 * @param Document $doc  Edited document.
+	 * @return array|\WP_Error Facts for the tool result.
+	 */
+	protected function save( WP_Post $post, Document $doc ) {
+		$content = $doc->to_string();
+		if ( $content === $post->post_content ) {
+			return array(
+				'id'      => (int) $post->ID,
+				'changed' => false,
+			);
+		}
+		if ( strlen( $content ) > Divi::MAX_CONTENT ) {
+			return Divi::error( 'too_large', __( 'The page would become too large. Nothing was changed.', 'wproadie' ), 413 );
+		}
+		$checked = Divi::check_save_filters( $content, $doc->format );
+		if ( is_wp_error( $checked ) ) {
+			return $checked;
+		}
+
+		$undo = Undo::post( $post->ID );
+		$this->add_undo( $undo );
+
+		$updated = wp_update_post(
+			wp_slash(
+				array(
+					'ID'           => $post->ID,
+					'post_content' => $content,
+				)
+			),
+			true
+		);
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
+
+		$result = array(
+			'id'          => (int) $post->ID,
+			'changed'     => true,
+			'revision_id' => isset( $undo['revision_id'] ) ? (int) $undo['revision_id'] : null,
+			'cache'       => Divi::is_active() ? Divi::clear_cache( (int) $post->ID ) : array(),
+		);
+		$link   = get_permalink( $post->ID );
+		if ( $link && ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) ) {
+			$result['link'] = (string) $link;
+		}
+
+		$saved = get_post( $post->ID );
+		if ( $saved && $saved->post_content !== $content ) {
+			$result['note'] = __( 'WordPress re-encoded parts of the page while saving (same meaning, different bytes).', 'wproadie' );
+		}
+
+		if ( ! function_exists( 'wp_check_post_lock' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/post.php';
+		}
+		$lock = wp_check_post_lock( $post->ID );
+		if ( $lock ) {
+			$user              = get_userdata( $lock );
+			$result['warning'] = sprintf(
+				/* translators: %s: user display name. */
+				__( '%s has this page open in an editor right now. If they save, their version replaces this change; tell them, or undo this change.', 'wproadie' ),
+				$user ? $user->display_name : __( 'Someone', 'wproadie' )
+			);
+		}
+		return $result;
+	}
+}

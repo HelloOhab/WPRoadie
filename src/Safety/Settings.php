@@ -35,6 +35,10 @@ final class Settings {
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
+		'divi'           => array(
+			'risk'    => Mode::RISK_WRITE,
+			'default' => true,
+		),
 		'settings'       => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
@@ -76,6 +80,7 @@ final class Settings {
 			'content'        => __( 'Content', 'wproadie' ),
 			'media'          => __( 'Media', 'wproadie' ),
 			'navigation'     => __( 'Navigation', 'wproadie' ),
+			'divi'           => __( 'Divi', 'wproadie' ),
 			'settings'       => __( 'Settings', 'wproadie' ),
 			'extensions'     => __( 'Plugins & themes', 'wproadie' ),
 			'users'          => __( 'Users', 'wproadie' ),
