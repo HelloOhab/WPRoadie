@@ -100,6 +100,12 @@ final class Divi {
 	 */
 	public static function format_of( WP_Post $post ): int {
 		$content = (string) $post->post_content;
+		// Divi 4 shortcodes at the top level win: turning the Divi 4 builder
+		// on for a page that already had Divi 5 blocks wraps those blocks in
+		// a Text module, and they are then just that module's content.
+		if ( self::starts_with_shortcodes( $content ) ) {
+			return 4;
+		}
 		if ( false !== strpos( $content, '<!-- wp:divi/' ) ) {
 			return 5;
 		}
@@ -112,6 +118,26 @@ final class Divi {
 		}
 		// An empty builder page: the format the site's Divi writes.
 		return 'on' === get_post_meta( $post->ID, '_et_pb_use_divi_5', true ) ? 5 : 4;
+	}
+
+	/**
+	 * True when the content opens with a Divi 4 shortcode (after whitespace).
+	 */
+	public static function starts_with_shortcodes( string $content ): bool {
+		return 1 === preg_match( '/^\s*\[et_pb_[a-z0-9_]+[\s\]\/]/', $content );
+	}
+
+	/**
+	 * The Divi version this site runs, for elements added to a page that
+	 * records none yet, or "" when unknown.
+	 */
+	public static function site_builder_version(): string {
+		foreach ( array( 'ET_BUILDER_PRODUCT_VERSION', 'ET_BUILDER_VERSION' ) as $constant ) {
+			if ( defined( $constant ) && is_string( constant( $constant ) ) && '' !== constant( $constant ) ) {
+				return (string) constant( $constant );
+			}
+		}
+		return '';
 	}
 
 	/**

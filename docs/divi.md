@@ -74,3 +74,8 @@ Paths count children from 0: `0.1.0.2` is section 0 → row 1 → column 0 → m
 - "Which Theme Builder template holds the site header? Update the phone number in it."
 - "Insert the 'Book now CTA' library section at the end of the About page."
 - "Undo the last change you made to the Home page."
+
+## Notes from real sites
+
+- **Divi 4 wrapping Divi 5 content.** Switching the Divi 4 builder on for a page created empty in Divi 5 puts its `<!-- wp:divi/placeholder /-->` inside a Text module. The page is Divi 4: the tools decide the format from the top level (a page that opens with an `[et_pb_…]` shortcode is Divi 4), not from block markup nested inside a module.
+- **Empty Divi 5 pages** are a single self-closing `<!-- wp:divi/placeholder /-->`. Adding a section opens it into a pair and puts the section inside, the way Divi keeps every section inside the placeholder. New Divi 5 elements get `builderVersion` from the page, or from the site's Divi version when the page has none (Divi 5.12.1 stamps each block this way).
