@@ -79,6 +79,21 @@ final class Registry {
 		Elementor\UpdateKit::class,
 		Elementor\RegenerateCss::class,
 
+		// Divi (write).
+		Divi\ListPages::class,
+		Divi\GetPage::class,
+		Divi\GetModule::class,
+		Divi\UpdateModule::class,
+		Divi\AddModule::class,
+		Divi\RemoveModule::class,
+		Divi\MoveModule::class,
+		Divi\DuplicateModule::class,
+		Divi\ReplaceText::class,
+		Divi\ListLayouts::class,
+		Divi\InsertLayout::class,
+		Divi\ListThemeBuilder::class,
+		Divi\ClearCache::class,
+
 		// Settings (write).
 		Settings\GetOptions::class,
 		Settings\UpdateOptions::class,
