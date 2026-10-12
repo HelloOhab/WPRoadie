@@ -149,7 +149,7 @@ WPRoadie updates itself from GitHub releases, like any plugin on the Plugins scr
 define( 'WPROADIE_GITHUB_TOKEN', 'github_pat_…' );
 ```
 
-To release: bump the version in `wproadie.php` (header and `WPROADIE_VERSION`), then push a tag such as `v0.2.0`. The release workflow builds `wproadie.zip` and publishes the release.
+To release: bump the version in `wproadie.php` (header and `WPROADIE_VERSION`) and merge it to `main`. Then either push a tag such as `v0.2.0`, or run the **Release** workflow by hand on `main` (Actions → Release → Run workflow) with the version; it creates the tag itself. Either way it builds `wproadie.zip` and publishes the release.
 
 ## Development
 
