@@ -55,7 +55,7 @@ The usual way: no connection string is copied by hand. The secret never appears 
    {"code":"…","code_verifier":"…","site_url":"<home_url()>"}
    ```
 
-   HQ answers `200 {"connection_string":"wproadie-hq:v1:…"}` and marks the code used, or `400 {"error":"invalid_code"}` (unknown, used, expired, or the verifier does not match; no other detail). The plugin checks that the connection string's `url` has the same origin as the HQ address it started with, stores it exactly as a manual connect would, sends a heartbeat, and gives the clicking administrator WPRoadie access if they did not have it (audit-logged as `hq/pair`).
+   HQ answers `200 {"connection_string":"wproadie-hq:v1:…","hq_email":"<approving admin's email>"}` and marks the code used, or `400 {"error":"invalid_code"}` (unknown, used, expired, or the verifier does not match; no other detail). The plugin checks that the connection string's `url` has the same origin as the HQ address it started with, stores it exactly as a manual connect would, sends a heartbeat, and gives the clicking administrator WPRoadie access if they did not have it (audit-logged as `hq/pair`). Plugin 0.5.0+: if that administrator's WordPress email differs from `hq_email` and they have no linked HQ email yet, `hq_email` becomes their linked HQ email (see `provision_credential`).
 
 The manual connection string stays available on both sides (HQ: Add site; plugin: "Use a connection string instead").
 
@@ -149,7 +149,7 @@ HQ answers `200 {"ok":true}`. The `site.hq_endpoint` from the latest valid heart
 `POST <site.hq_endpoint>` (the REST route `wproadie/v1/hq`), purpose `command`. Body:
 
 ```json
-{ "command": "provision_credential", "args": { "wp_user": "abdul", "label": "Abdul (HQ)" } }
+{ "command": "provision_credential", "args": { "wp_user": "abdul", "label": "Abdul (HQ)", "hq_email": "abdul@rhythmco.com" } }
 ```
 
 The site answers `200` with `{"ok":true,"result":{…}}`, or `4xx` with `{"ok":false,"error":"<code>","message":"…"}`. Every command is written to the site's WPRoadie audit log as `hq/<command>` (never including a password).
@@ -158,13 +158,13 @@ The site answers `200` with `{"ok":true,"result":{…}}`, or `4xx` with `{"ok":f
 | --- | --- | --- | --- |
 | `ping` | – | `{ "version": "0.4.0" }` | Allowed with the kill switch on. |
 | `heartbeat` | – | the heartbeat body | Lets HQ refresh a site on demand. Allowed with the kill switch on. |
-| `list_access` | – | `{ "users": [ { "login", "display_name", "email", "is_admin", "has_access", "passwords": [ { "uuid", "name", "created", "last_used" } ] } ] }` | Users with WPRoadie access, plus their WPRoadie Application Passwords. |
-| `provision_credential` | `wp_user` (login or email), `label` | `{ "username", "uuid", "password" }` | The user must exist, be an administrator and already have WPRoadie access (`wp wproadie grant`): HQ cannot grant access. Refused with the kill switch on, and unless the site is HTTPS (or the environment type is `local`). The password is returned once and never logged. The Application Password is named `WPRoadie HQ – <label>`. |
+| `list_access` | – | `{ "users": [ { "login", "display_name", "email", "hq_email", "is_admin", "has_access", "passwords": [ { "uuid", "name", "created", "last_used" } ] } ] }` | Users with WPRoadie access, plus their WPRoadie Application Passwords. `hq_email` (0.5.0+) is the linked HQ email, or empty. |
+| `provision_credential` | `wp_user` (login, email, or linked HQ email), `label`, `hq_email` | `{ "username", "uuid", "password" }` | The user must exist, be an administrator and already have WPRoadie access (`wp wproadie grant`): HQ cannot grant access. Plugin 0.5.0+: `hq_email` is the verified email of the HQ person asking, and the password is only issued if it equals (ignoring case) the WordPress user's email or the HQ email a site administrator linked to that user (Tools → WPRoadie → Who has AI access, or `wp wproadie hq-email <user> <email>`); otherwise `email_mismatch`. So an HQ account cannot get a password for someone else's login by naming it. Sites can turn the check off with the `wproadie_hq_require_email_match` filter. Refused with the kill switch on, and unless the site is HTTPS (or the environment type is `local`). The password is returned once and never logged. The Application Password is named `WPRoadie HQ – <label>`. |
 | `revoke_credential` | `wp_user`, `uuid` | `{ "revoked": true }` | Only passwords whose name starts with `WPRoadie` can be revoked this way. |
 | `revoke_user` | `wp_user` | `{ "passwords_revoked": 2, "access_removed": true }` | Deletes all of the user's WPRoadie Application Passwords and removes their WPRoadie access. This is the "someone left" action. Allowed with the kill switch on. |
 | `list_tools` | – | `{ "tools_hash": "…", "disabled": false, "tools": [ { "name", "title", "description", "inputSchema", "annotations", "risk" } ] }` | Plugin 0.4.0+. The MCP tools the site exposes right now (respecting mode and tool switches), named and shaped exactly as the site's own MCP `tools/list` returns them, plus WPRoadie's `risk` (`read`, `write`, `admin`, `dangerous`). `tools_hash` is the lowercase hex SHA-256 of the JSON-encoded `tools` array and matches the heartbeat's `wproadie.tools_hash`, so HQ refetches only when it changes. Allowed with the kill switch on (`disabled` is then `true`). |
 
-Error codes: `unknown_command`, `bad_args`, `user_not_found`, `no_access` (user has no WPRoadie access), `disabled` (kill switch on), `insecure` (not HTTPS), `not_found` (no such password), `failed`.
+Error codes: `unknown_command`, `bad_args`, `user_not_found`, `no_access` (user has no WPRoadie access), `email_mismatch` (the HQ person is not that WordPress user), `disabled` (kill switch on), `insecure` (not HTTPS), `not_found` (no such password), `failed`.
 
 ## Details both sides follow
 

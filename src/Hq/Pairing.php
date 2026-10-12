@@ -143,6 +143,7 @@ final class Pairing {
 			'hq_url'    => $result['hq_url'],
 			'site_id'   => $result['site_id'],
 			'granted'   => $result['granted'],
+			'linked'    => $result['linked'],
 			'heartbeat' => $result['heartbeat'],
 		);
 		// Never the code, verifier or secret.
@@ -164,7 +165,7 @@ final class Pairing {
 	}
 
 	/**
-	 * @return array{hq_url: string, site_id: string, granted: bool, heartbeat: string}|WP_Error
+	 * @return array{hq_url: string, site_id: string, granted: bool, linked: bool, heartbeat: string}|WP_Error
 	 */
 	private static function exchange( string $code, string $state ) {
 		$blocked = self::blocked();
@@ -255,11 +256,15 @@ final class Pairing {
 		if ( ! Permission::can_connect( $user_id ) ) {
 			$granted = Permission::grant( $user_id );
 		}
+		// HQ names the admin who approved; when their email differs from this
+		// user's, link it so HQ can issue this person passwords later.
+		$linked = isset( $data['hq_email'] ) && is_string( $data['hq_email'] ) && HqIdentity::link_after_pairing( $user_id, $data['hq_email'] );
 
 		return array(
 			'hq_url'    => $connected['config']['url'],
 			'site_id'   => $connected['config']['site_id'],
 			'granted'   => $granted,
+			'linked'    => $linked,
 			'heartbeat' => true === $connected['heartbeat'] ? 'accepted' : 'failed',
 		);
 	}

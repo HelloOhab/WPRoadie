@@ -10,6 +10,7 @@
 use WPRoadie\Admin\Credentials;
 use WPRoadie\Hq\Connection;
 use WPRoadie\Hq\Heartbeat;
+use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Signer;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Settings;
@@ -291,8 +292,9 @@ wproadie_test(
 				array(
 					'command' => 'provision_credential',
 					'args'    => array(
-						'wp_user' => $login . '@example.com',
-						'label'   => 'Tester',
+						'wp_user'  => $login . '@example.com',
+						'label'    => 'Tester',
+						'hq_email' => $login . '@example.com',
 					),
 				)
 			);
@@ -332,6 +334,75 @@ wproadie_test(
 			wproadie_assert_same( 0, count( Credentials::list_for( $user_id ) ) );
 		} finally {
 			remove_filter( 'wp_is_application_passwords_available', '__return_true' );
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+			wp_delete_user( $user_id );
+		}
+	}
+);
+
+wproadie_test(
+	'provision_credential: only for the HQ person whose email matches, or is linked',
+	function () {
+		$login   = 'hq_email_' . wp_generate_password( 6, false );
+		$user_id = wp_create_user( $login, wp_generate_password(), $login . '@client.example' );
+		( new WP_User( $user_id ) )->set_role( 'administrator' );
+		Permission::grant( $user_id );
+		add_filter( 'wp_is_application_passwords_available', '__return_true' );
+		add_filter( 'wproadie_hq_allow_http', '__return_true' );
+		$provision = static function ( array $args ) {
+			return hq_test_command(
+				array(
+					'command' => 'provision_credential',
+					'args'    => $args + array( 'label' => 'T' ),
+				)
+			)->get_data();
+		};
+		try {
+			// HQ must say who is asking.
+			wproadie_assert_same( 'bad_args', $provision( array( 'wp_user' => $login ) )['error'] );
+			// Someone else's HQ account typing this login gets nothing.
+			$other = $provision(
+				array(
+					'wp_user'  => $login,
+					'hq_email' => 'someone.else@rhythmco.com',
+				)
+			);
+			wproadie_assert_same( 'email_mismatch', $other['error'] );
+			wproadie_assert_same( 0, count( Credentials::list_for( $user_id ) ) );
+
+			// The WordPress email matches, in any case.
+			$own = $provision(
+				array(
+					'wp_user'  => $login,
+					'hq_email' => strtoupper( $login ) . '@CLIENT.EXAMPLE',
+				)
+			);
+			wproadie_assert( isset( $own['result']['password'] ), wp_json_encode( $own ) );
+
+			// A linked HQ email matches too, and finds the user by itself.
+			wproadie_assert( HqIdentity::link( $user_id, 'Abdul.Test@RhythmCo.com' ) );
+			wproadie_assert_same( 'abdul.test@rhythmco.com', HqIdentity::linked_email( $user_id ) );
+			$linked = $provision(
+				array(
+					'wp_user'  => 'abdul.test@rhythmco.com',
+					'hq_email' => 'abdul.test@rhythmco.com',
+				)
+			);
+			wproadie_assert_same( $login, $linked['result']['username'] ?? null, wp_json_encode( $linked ) );
+			$access = wp_list_filter( hq_test_command( array( 'command' => 'list_access' ) )->get_data()['result']['users'], array( 'login' => $login ) );
+			wproadie_assert_same( 'abdul.test@rhythmco.com', reset( $access )['hq_email'] );
+			wproadie_assert( ! HqIdentity::link( $user_id, 'not an email' ) );
+			wproadie_assert( HqIdentity::link( $user_id, '' ) );
+			wproadie_assert_same( '', HqIdentity::linked_email( $user_id ) );
+
+			// Sites can turn the check off.
+			add_filter( 'wproadie_hq_require_email_match', '__return_false' );
+			$off = $provision( array( 'wp_user' => $login ) );
+			remove_filter( 'wproadie_hq_require_email_match', '__return_false' );
+			wproadie_assert( isset( $off['result']['password'] ), wp_json_encode( $off ) );
+		} finally {
+			remove_filter( 'wp_is_application_passwords_available', '__return_true' );
+			remove_filter( 'wproadie_hq_allow_http', '__return_true' );
 			require_once ABSPATH . 'wp-admin/includes/user.php';
 			wp_delete_user( $user_id );
 		}

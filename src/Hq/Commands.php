@@ -166,6 +166,7 @@ final class Commands {
 				'login'        => $user->user_login,
 				'display_name' => $user->display_name,
 				'email'        => $user->user_email,
+				'hq_email'     => HqIdentity::linked_email( (int) $user->ID ),
 				'is_admin'     => user_can( $user, 'manage_options' ),
 				'has_access'   => Permission::can_connect( (int) $user->ID ),
 				'passwords'    => $passwords,
@@ -189,6 +190,22 @@ final class Commands {
 		}
 		if ( ! wp_is_application_passwords_available_for_user( $user ) ) {
 			return self::fail( 'failed', Credentials::unavailable_reason(), 400 );
+		}
+
+		// HQ says who is asking; the password is only for that person's own
+		// WordPress user (their email, or the HQ email an admin linked).
+		if ( HqIdentity::required() ) {
+			$hq_email = isset( $args['hq_email'] ) && is_string( $args['hq_email'] ) ? trim( $args['hq_email'] ) : '';
+			if ( '' === $hq_email || ! is_email( $hq_email ) ) {
+				return self::fail( 'bad_args', __( 'HQ did not say who is asking (hq_email). Update WPRoadie HQ.', 'wproadie' ), 400 );
+			}
+			if ( ! HqIdentity::matches( $user, $hq_email ) ) {
+				return self::fail(
+					'email_mismatch',
+					__( 'That WordPress user’s email is not the HQ account asking for it. A site administrator can link the HQ email to the user under Tools → WPRoadie → Who has AI access.', 'wproadie' ),
+					403
+				);
+			}
 		}
 
 		$label = isset( $args['label'] ) && is_string( $args['label'] ) ? sanitize_text_field( $args['label'] ) : '';
@@ -260,6 +277,10 @@ final class Commands {
 		$user = get_user_by( 'login', $id );
 		if ( ! $user && is_email( $id ) ) {
 			$user = get_user_by( 'email', $id );
+			// HQ falls back to the person's HQ email: find who it is linked to.
+			if ( ! $user ) {
+				$user = HqIdentity::user_by_linked_email( $id );
+			}
 		}
 		return $user instanceof WP_User ? $user : null;
 	}
