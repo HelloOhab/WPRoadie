@@ -252,12 +252,19 @@ wproadie_test(
 );
 
 wproadie_test(
-	'update-theme reports a failed or empty update check',
+	'update-theme updates, or reports a failed or empty update check',
 	function () {
 		wproadie_assert_error( wproadie_call( 'update-theme', array( 'stylesheet' => 'no-such-theme' ) ), 'wproadie_theme_not_found' );
 		$result = wproadie_call( 'update-theme', array( 'stylesheet' => 'twentytwentyone' ) );
-		wproadie_assert_error( $result );
-		wproadie_assert( in_array( $result->get_error_code(), array( 'wproadie_update_check_failed', 'wproadie_no_update' ), true ), $result->get_error_code() );
+		if ( is_wp_error( $result ) ) {
+			// No network to WordPress.org, or the bundled theme is current.
+			wproadie_assert( in_array( $result->get_error_code(), array( 'wproadie_update_check_failed', 'wproadie_no_update' ), true ), $result->get_error_code() );
+			return;
+		}
+		// With WordPress.org reachable (e.g. CI), the bundled theme may really update.
+		wproadie_assert_same( 'twentytwentyone', $result['stylesheet'] );
+		wproadie_assert( version_compare( $result['version'], $result['previous_version'], '>' ), 'The version should go up: ' . $result['previous_version'] . ' to ' . $result['version'] );
+		wproadie_assert_same( $result['version'], wp_get_theme( 'twentytwentyone' )->get( 'Version' ) );
 	}
 );
 

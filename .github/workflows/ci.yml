@@ -67,6 +67,7 @@ jobs:
           cache: npm
           cache-dependency-path: cli/package-lock.json
       - run: npm ci
-      - run: npm run lint
+      # The tests import the compiled dist/, so build before type-checking them.
       - run: npm run build
+      - run: npm run lint
       - run: npm test
