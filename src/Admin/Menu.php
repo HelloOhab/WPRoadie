@@ -1,8 +1,8 @@
 <?php
 /**
- * The Tools > WPRoadie admin screen. A React app (admin/src, built with
- *
- * @wordpress/scripts) talking to the REST endpoints in RestApi.
+ * The Tools > WPRoadie admin screen: a React app in admin/src, built
+ * with the WordPress scripts package, talking to the REST endpoints in
+ * RestApi.
  *
  * @package WPRoadie
  */
