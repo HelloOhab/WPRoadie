@@ -1660,3 +1660,103 @@ wproadie_test(
 		wproadie_assert( ! in_array( 'wproadie/divi-get-page', ( new Registry() )->enabled_names(), true ), 'Later tests see this site without Divi.' );
 	}
 );
+
+// Real content from a live Divi 5.12 site: the Divi 4 builder was turned on
+// for a page created empty in Divi 5, so its placeholder block became the
+// body of a Text module.
+const WPROADIE_DIVI_WRAPPED_PLACEHOLDER = "[et_pb_section admin_label=\"section\"]\n\t\t\t[et_pb_row admin_label=\"row\"]\n\t\t\t\t[et_pb_column type=\"4_4\"][et_pb_text admin_label=\"Text\"]<!-- wp:divi/placeholder /-->[/et_pb_text][/et_pb_column]\n\t\t\t[/et_pb_row]\n\t\t[/et_pb_section]";
+
+wproadie_test(
+	'a Divi 4 page whose Text module holds Divi 5 blocks is read and edited as Divi 4',
+	function () {
+		$id = wproadie_divi_fixture( WPROADIE_DIVI_WRAPPED_PLACEHOLDER );
+		try {
+			wproadie_assert_same( 4, Divi::format_of( get_post( $id ) ) );
+			$page = wproadie_ok( wproadie_call( 'divi-get-page', array( 'id' => $id ) ) );
+			wproadie_assert_same( 4, $page['format'] );
+			wproadie_assert_same( array( 'et_pb_section', 'et_pb_row', 'et_pb_column', 'et_pb_text' ), array_column( $page['items'], 'type' ) );
+
+			$added = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'         => $id,
+						'type'       => 'section',
+						'columns'    => array( '4_4' ),
+						'attributes' => array( 'admin_label' => 'Hero' ),
+					)
+				)
+			);
+			wproadie_assert_same( '1', $added['module']['path'] );
+			wproadie_assert_same( 'et_pb_section', $added['module']['type'] );
+			$after = wproadie_divi_content( $id );
+			// The existing content is untouched; the new section follows it at the top level.
+			wproadie_assert_same( 0, strpos( $after, WPROADIE_DIVI_WRAPPED_PLACEHOLDER ) );
+			wproadie_assert( 1 === preg_match( '/^\[et_pb_section [^\]]*admin_label="Hero"\]\[et_pb_row/', substr( $after, strlen( WPROADIE_DIVI_WRAPPED_PLACEHOLDER ) ) ), $after );
+
+			wproadie_ok( wproadie_call( 'undo-change', array( 'undo_id' => $added['undo_id'] ) ) );
+			wproadie_assert_same( WPROADIE_DIVI_WRAPPED_PLACEHOLDER, wproadie_divi_content( $id ) );
+		} finally {
+			wproadie_divi_cleanup( array( $id ) );
+		}
+	}
+);
+
+wproadie_test(
+	'an empty Divi 5 page gets new sections inside its placeholder wrapper',
+	function () {
+		$id = wproadie_divi_fixture( '<!-- wp:divi/placeholder /-->', array( 'meta' => array() ) );
+		try {
+			wproadie_assert_same( 5, Divi::format_of( get_post( $id ) ) );
+			// Reading does not change the stored page.
+			wproadie_ok( wproadie_call( 'divi-get-page', array( 'id' => $id ) ) );
+			wproadie_assert_same( '<!-- wp:divi/placeholder /-->', wproadie_divi_content( $id ) );
+
+			$added = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'         => $id,
+						'type'       => 'section',
+						'columns'    => array( '4_4' ),
+						'attributes' => array( 'module.meta.adminLabel.desktop.value' => 'Hero' ),
+					)
+				)
+			);
+			wproadie_assert_same( '0', $added['module']['path'] );
+			$blocks = array_values(
+				array_filter(
+					parse_blocks( wproadie_divi_content( $id ) ),
+					static function ( $block ) {
+						return null !== $block['blockName'];
+					}
+				)
+			);
+			wproadie_assert_same( 1, count( $blocks ), 'Only the placeholder at the top level.' );
+			wproadie_assert_same( 'divi/placeholder', $blocks[0]['blockName'] );
+			wproadie_assert_same( 'divi/section', $blocks[0]['innerBlocks'][0]['blockName'] );
+			wproadie_assert_same( 'Hero', $blocks[0]['innerBlocks'][0]['attrs']['module']['meta']['adminLabel']['desktop']['value'] );
+			wproadie_assert_same( 'divi/row', $blocks[0]['innerBlocks'][0]['innerBlocks'][0]['blockName'] );
+
+			// A module goes into the new column, still inside the wrapper.
+			$text = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'        => $id,
+						'container' => '0.0.0',
+						'type'      => 'text',
+						'content'   => '<p>Hello</p>',
+					)
+				)
+			);
+			wproadie_assert_same( '0.0.0.0', $text['module']['path'] );
+
+			wproadie_ok( wproadie_call( 'undo-change', array( 'undo_id' => $text['undo_id'] ) ) );
+			wproadie_ok( wproadie_call( 'undo-change', array( 'undo_id' => $added['undo_id'] ) ) );
+			wproadie_assert_same( '<!-- wp:divi/placeholder /-->', wproadie_divi_content( $id ) );
+		} finally {
+			wproadie_divi_cleanup( array( $id ) );
+		}
+	}
+);

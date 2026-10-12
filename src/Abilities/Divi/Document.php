@@ -82,6 +82,22 @@ final class Document {
 
 
 	/**
+	 * An empty Divi 5 page is a single self-closing placeholder block;
+	 * content goes inside that wrapper, so open it into a pair before
+	 * something is inserted at the top level. Only callers that are about
+	 * to insert do this (find_container), so reads stay byte-exact.
+	 */
+	private function open_empty_placeholder(): void {
+		if ( 5 !== $this->format ) {
+			return;
+		}
+		$nodes = $this->root->children();
+		if ( 1 === count( $nodes ) && 'divi/placeholder' === $nodes[0]->name && $nodes[0]->void ) {
+			Blocks::ensure_closed( $nodes[0] );
+		}
+	}
+
+	/**
 	 * Every element, depth first, with its path, parent and depth.
 	 *
 	 * @return array<int, array{node: Node, path: string, parent: Node, depth: int, global: string}>
@@ -176,6 +192,7 @@ final class Document {
 	public function find_container( string $path ) {
 		$path = trim( $path );
 		if ( '' === $path ) {
+			$this->open_empty_placeholder();
 			return array(
 				'node'   => $this->top(),
 				'path'   => '',
@@ -284,7 +301,9 @@ final class Document {
 				return $value;
 			}
 		}
-		return '';
+		// A page with nothing that records one (e.g. an empty Divi 5 page):
+		// stamp new elements with the site's Divi version, as Divi does.
+		return Divi::site_builder_version();
 	}
 
 	/**
