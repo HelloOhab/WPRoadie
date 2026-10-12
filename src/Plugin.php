@@ -73,6 +73,8 @@ final class Plugin {
 		// and its commands can still take access away (never grant it).
 		( new HqHeartbeat() )->hooks();
 		( new HqCommands() )->hooks();
+		// Page builders: keep their caches in step when a change is undone.
+		Abilities\Elementor\ElementorHelper::hooks();
 		if ( is_admin() ) {
 			( new Menu() )->hooks();
 			( new Notices() )->hooks();
