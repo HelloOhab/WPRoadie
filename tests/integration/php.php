@@ -120,10 +120,12 @@ wproadie_test(
 wproadie_test(
 	'run-php collects warnings and notices',
 	function () {
-		$result = wproadie_ok( wproadie_call( 'run-php', array( 'code' => '$a = array(); $b = $a["missing"]; trigger_error( "custom", E_USER_NOTICE ); return 1;' ) ) );
+		$result = wproadie_ok( wproadie_call( 'run-php', array( 'code' => '$b = file_get_contents( "/wproadie-no-such-file" ); trigger_error( "custom", E_USER_NOTICE ); return 1;' ) ) );
 		wproadie_assert_same( true, $result['success'] );
 		wproadie_assert_same( 1, $result['return_value'] );
 		wproadie_assert_same( 2, count( $result['errors'] ), wp_json_encode( $result['errors'] ) );
+		// A failed file open is E_WARNING on PHP 7.4 and 8 alike (unlike an
+		// undefined array key, a notice before PHP 8).
 		wproadie_assert_same( 'warning', $result['errors'][0]['type'] );
 		wproadie_assert_same( 'user_notice', $result['errors'][1]['type'] );
 		wproadie_assert_same( 'custom', $result['errors'][1]['message'] );

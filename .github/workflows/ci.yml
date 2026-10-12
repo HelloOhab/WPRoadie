@@ -36,6 +36,8 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     strategy:
+      # Report every PHP version; a failure on one should not hide another.
+      fail-fast: false
       matrix:
         include:
           - php: '7.4'
