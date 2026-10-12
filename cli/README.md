@@ -79,6 +79,24 @@ jones-bakery,https://jonesbakery.co.uk,rhythm,,Jones Bakery,
 
 JSON: an array (or `{"sites": [...]}`) of objects with the same keys. Import never prompts. Rows without a `password_command` get one later with `wproadie sites set-password <name>`. A file with a `password` column is refused: do not put passwords in import files. Existing sites are skipped unless you pass `--replace`.
 
+## Get your sites from WPRoadie HQ
+
+If your team runs WPRoadie HQ, you don't need to add sites or passwords by hand:
+
+1. In HQ, open **Me → API tokens** and create a token.
+2. Log in and sync:
+
+   ```bash
+   wproadie hq login https://hq.rhythmco.com      # asks for the token, stores it in the OS keychain
+   wproadie hq sync                               # adds every site HQ shows you
+   ```
+
+   Use `--token-command "op read op://Rhythm/WPRoadie HQ/token"` to keep the token in a password manager instead, or set `WPROADIE_HQ_TOKEN`.
+
+3. For each site, click **Provision** on its page in HQ to get your own connection password. Synced sites fetch it from HQ when they connect; it is kept in memory only, never on disk.
+
+Run `wproadie hq sync` again after sites are added in HQ (`--prune` also drops sites HQ no longer lists). `wproadie hq status` checks the token. When someone leaves, revoking them in HQ takes away their passwords on every site, and their HQ token stops working.
+
 ## Connect your AI client
 
 ### Claude Code
@@ -125,7 +143,7 @@ Connections are opened on first use and kept per site, so switching back and for
 
 ## Passwords
 
-When a site's password is needed, wproadie looks in this order:
+Synced HQ sites get their password from HQ (see above). For sites added by hand, wproadie looks in this order when a site's password is needed:
 
 1. **`WPROADIE_PASSWORD_<NAME>`** environment variable: the site name upper-cased with dashes as underscores, e.g. `WPROADIE_PASSWORD_SMITH_DENTAL`. Useful in CI.
 2. **Password command** (`--password-command`), run through your shell (`$SHELL`) each time a connection is opened. stdin is not passed to it; its stderr is shown, so a password-manager unlock prompt still appears. Examples:

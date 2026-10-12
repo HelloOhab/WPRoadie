@@ -209,11 +209,10 @@ final class WpCliCommand {
 	public function log( $args, $assoc_args ) {
 		$rows = array_map(
 			static function ( $row ) {
-				$user = get_userdata( (int) $row->user_id );
 				return array(
 					'id'      => $row->id,
 					'time'    => $row->created_at,
-					'user'    => $user ? $user->user_login : '#' . $row->user_id,
+					'user'    => AuditLog::actor( $row ),
 					'ability' => $row->ability,
 					'status'  => $row->status,
 					'ms'      => $row->duration_ms,

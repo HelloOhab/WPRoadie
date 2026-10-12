@@ -15,6 +15,8 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Server;
 use WPRoadie\Abilities\Registry;
+use WPRoadie\Hq\Connection as HqConnection;
+use WPRoadie\Hq\Heartbeat as HqHeartbeat;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Log\Undo;
 use WPRoadie\Plugin;
@@ -159,10 +161,33 @@ final class RestApi {
 				'reason'    => Credentials::available( $user_id ) ? '' : Credentials::unavailable_reason(),
 			),
 			'user'                 => wp_get_current_user()->user_login,
+			'hq'                   => self::hq_status(),
 		);
 	}
 
-	public function update_settings( WP_REST_Request $request ): array {
+	/**
+	 * HQ connection state for the admin screen. Never includes the secret.
+	 */
+	private static function hq_status(): array {
+		$config = HqConnection::get();
+		$last   = HqHeartbeat::last_result();
+		return array(
+			'connected'      => null !== $config,
+			'url'            => $config ? $config['url'] : null,
+			'site_id'        => $config ? $config['site_id'] : null,
+			'from_constants' => HqConnection::from_constants(),
+			'last'           => $last ? array(
+				'at'    => gmdate( 'c', (int) $last['at'] ),
+				'ok'    => (bool) $last['ok'],
+				'error' => $last['error'],
+			) : null,
+		);
+	}
+
+	/**
+	 * @return array|WP_Error
+	 */
+	public function update_settings( WP_REST_Request $request ) {
 		$params = $request->get_json_params();
 		$params = is_array( $params ) ? $params : array();
 
@@ -183,6 +208,21 @@ final class RestApi {
 		}
 		if ( array_key_exists( 'disabled', $params ) ) {
 			Settings::set( 'disabled', (bool) $params['disabled'] );
+		}
+		if ( ! empty( $params['hq_connect'] ) && is_string( $params['hq_connect'] ) ) {
+			$connected = HqConnection::connect( $params['hq_connect'] );
+			if ( is_wp_error( $connected ) ) {
+				return $connected;
+			}
+			HqHeartbeat::ensure_scheduled();
+			HqHeartbeat::send();
+		}
+		if ( ! empty( $params['hq_disconnect'] ) && ! HqConnection::from_constants() ) {
+			HqConnection::disconnect();
+			HqHeartbeat::unschedule();
+		}
+		if ( ! empty( $params['hq_heartbeat'] ) ) {
+			HqHeartbeat::send();
 		}
 
 		return $this->get_status();
@@ -343,11 +383,10 @@ final class RestApi {
 	 * @param object $row Log row.
 	 */
 	private function describe_row( $row ): array {
-		$user = get_userdata( (int) $row->user_id );
 		return array(
 			'id'          => (int) $row->id,
 			'time'        => gmdate( 'c', (int) strtotime( $row->created_at . ' UTC' ) ),
-			'user'        => $user ? $user->user_login : '#' . $row->user_id,
+			'user'        => AuditLog::actor( $row ),
 			'ability'     => $row->ability,
 			'status'      => $row->status,
 			'summary'     => 'error' === $row->status ? wp_html_excerpt( (string) $row->result, 160, '…' ) : wp_html_excerpt( (string) $row->input, 120, '…' ),

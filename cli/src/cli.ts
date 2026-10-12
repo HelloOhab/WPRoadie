@@ -17,6 +17,7 @@ import {
   type Registry,
   type Site,
 } from './config.js';
+import { clearHqCache, fetchHqSites, getHqToken, HQ_TOKEN_ACCOUNT, HQ_TOKEN_ENV, HqError, mergeHqSites, normalizeHqUrl } from './hq.js';
 import { readImportFile, rowToSite } from './importer.js';
 import { matchSite } from './match.js';
 import { readPassword } from './prompt.js';
@@ -414,6 +415,97 @@ Never put passwords in the file. Sites without a password_command get one later 
       await runMcpServer({ site: opts.site as string | undefined });
     });
 
+  const hq = program.command('hq').description('Get your sites and connection passwords from WPRoadie HQ');
+
+  hq
+    .command('login')
+    .description('Connect to HQ with a personal API token (create one under "Me" in HQ)')
+    .argument('<url>', 'HQ address, e.g. https://hq.rhythmco.com')
+    .option('--token-command <cmd>', 'shell command that prints the token (e.g. a password manager); stored instead of the token')
+    .option('--token-stdin', 'read the token from stdin')
+    .action(async (url: string, opts) => {
+      const registry = loadRegistry();
+      let hqUrl: string;
+      try {
+        hqUrl = normalizeHqUrl(url);
+      } catch (err) {
+        throw new UserError((err as Error).message);
+      }
+      let config: NonNullable<Registry['hq']>;
+      let token: string;
+      if (opts.tokenCommand) {
+        config = { url: hqUrl, token: 'command', tokenCommand: opts.tokenCommand as string };
+        token = await getHqToken(config);
+      } else if (process.env[HQ_TOKEN_ENV]) {
+        config = { url: hqUrl, token: 'env' };
+        token = await getHqToken(config);
+      } else {
+        token = await readPassword('HQ API token: ', Boolean(opts.tokenStdin));
+        if (!token) throw new UserError('No token given.');
+        config = { url: hqUrl, token: 'keychain' };
+      }
+      // Check the token before storing anything.
+      const sites = await fetchHqSites(config, token);
+      if (config.token === 'keychain') {
+        await keychainSet(HQ_TOKEN_ACCOUNT, token);
+      }
+      registry.hq = config;
+      saveRegistry(registry);
+      out(`Connected to HQ at ${hqUrl}: ${sites.length} site(s) available. Run "wproadie hq sync" to add them.`);
+    });
+
+  hq
+    .command('sync')
+    .description('Add or update the sites HQ lists; their passwords come from HQ when needed')
+    .option('--prune', 'remove sites that came from HQ but HQ no longer lists')
+    .action(async (opts) => {
+      const registry = loadRegistry();
+      if (!registry.hq) throw new UserError('HQ is not set up. Run "wproadie hq login <url>" first.');
+      const sites = await fetchHqSites(registry.hq, await getHqToken(registry.hq));
+      const result = mergeHqSites(registry, sites, Boolean(opts.prune));
+      saveRegistry(registry);
+      clearHqCache();
+      out(`Synced from HQ: ${result.added.length} added, ${result.updated.length} updated, ${result.removed.length} removed.`);
+      if (result.withoutCredential.length) {
+        out(`No connection password in HQ yet for: ${result.withoutCredential.join(', ')}. Provision one on each site's page in HQ.`);
+      }
+    });
+
+  hq
+    .command('status')
+    .description('Show the HQ connection')
+    .action(async () => {
+      const registry = loadRegistry();
+      if (!registry.hq) {
+        out('Not connected to HQ.');
+        return;
+      }
+      const fromHq = registry.sites.filter((s) => s.password === 'hq').length;
+      out(`HQ:     ${registry.hq.url}`);
+      out(`Token:  ${process.env[HQ_TOKEN_ENV] ? `env (${HQ_TOKEN_ENV})` : registry.hq.token === 'command' ? `command: ${registry.hq.tokenCommand ?? ''}` : registry.hq.token}`);
+      out(`Sites:  ${fromHq} synced from HQ`);
+      try {
+        const sites = await fetchHqSites(registry.hq, await getHqToken(registry.hq));
+        out(`Check:  OK, HQ lists ${sites.length} site(s), ${sites.filter((s) => s.credential).length} with your password`);
+      } catch (err) {
+        out(`Check:  FAILED, ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  hq
+    .command('logout')
+    .description('Forget HQ and its token (synced sites stay, but need another password source)')
+    .action(async () => {
+      const registry = loadRegistry();
+      if (registry.hq?.token === 'keychain') {
+        await keychainDelete(HQ_TOKEN_ACCOUNT).catch(() => false);
+      }
+      delete registry.hq;
+      saveRegistry(registry);
+      out('Logged out of HQ.');
+    });
+
   const setup = program.command('setup').description('Connect wproadie to an AI client');
 
   setup
@@ -458,7 +550,7 @@ async function main(): Promise<void> {
   try {
     await program.parseAsync(process.argv);
   } catch (err) {
-    if (err instanceof UserError || err instanceof SiteError || err instanceof SecretError) {
+    if (err instanceof UserError || err instanceof SiteError || err instanceof SecretError || err instanceof HqError) {
       info(`wproadie: ${err.message}`);
     } else {
       const e = err as Error;

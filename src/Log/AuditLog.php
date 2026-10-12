@@ -172,6 +172,59 @@ final class AuditLog {
 	}
 
 	/**
+	 * Who made a logged call, for display: a login, "HQ" for signed HQ
+	 * commands (which run with no WordPress user), or "#<id>" for a
+	 * deleted user.
+	 *
+	 * @param object $row Log row.
+	 */
+	public static function actor( $row ): string {
+		$user = get_userdata( (int) $row->user_id );
+		if ( $user ) {
+			return $user->user_login;
+		}
+		if ( 0 === (int) $row->user_id && 0 === strpos( (string) $row->ability, 'hq/' ) ) {
+			return 'HQ';
+		}
+		return '#' . $row->user_id;
+	}
+
+	/**
+	 * AI activity for HQ's heartbeat: the last tool call and 24-hour
+	 * counts. Counts only WPRoadie tool calls, not HQ commands or undos
+	 * made from wp-admin.
+	 *
+	 * @return array{last_call_at: string|null, last_call_user: string|null, last_call_tool: string|null, calls_24h: int, errors_24h: int, users_24h: string[]}
+	 */
+	public static function activity_summary(): array {
+		global $wpdb;
+
+		$table = self::table();
+		$since = gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS );
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name is not user input.
+		$like   = $wpdb->esc_like( 'wproadie/' ) . '%';
+		$last   = $wpdb->get_row( $wpdb->prepare( "SELECT created_at, user_id, ability FROM {$table} WHERE ability LIKE %s AND ability <> 'wproadie/undo' ORDER BY id DESC LIMIT 1", $like ) );
+		$counts = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) AS calls, SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors FROM {$table} WHERE ability LIKE %s AND ability <> 'wproadie/undo' AND created_at >= %s", $like, $since ) );
+		$ids    = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT user_id FROM {$table} WHERE ability LIKE %s AND ability <> 'wproadie/undo' AND created_at >= %s", $like, $since ) );
+		// phpcs:enable
+
+		$login = static function ( $user_id ) {
+			$user = get_userdata( (int) $user_id );
+			return $user ? $user->user_login : null;
+		};
+
+		return array(
+			'last_call_at'   => $last ? gmdate( 'Y-m-d\TH:i:s\Z', (int) strtotime( $last->created_at . ' UTC' ) ) : null,
+			'last_call_user' => $last ? $login( $last->user_id ) : null,
+			'last_call_tool' => $last ? (string) $last->ability : null,
+			'calls_24h'      => $counts ? (int) $counts->calls : 0,
+			'errors_24h'     => $counts ? (int) $counts->errors : 0,
+			'users_24h'      => array_values( array_filter( array_map( $login, is_array( $ids ) ? $ids : array() ) ) ),
+		);
+	}
+
+	/**
 	 * Deletes entries older than the retention period.
 	 */
 	public static function prune(): void {
