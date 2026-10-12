@@ -33,6 +33,7 @@ wp_clear_scheduled_hook( 'wproadie_hq_heartbeat' );
 wp_clear_scheduled_hook( 'wproadie_hq_heartbeat_soon' );
 delete_option( 'wproadie_hq' );
 delete_option( 'wproadie_hq_last_heartbeat' );
+delete_option( 'wproadie_hq_last_url' );
 delete_transient( 'wproadie_hq_health' );
 delete_site_transient( 'wproadie_update_release' );
 

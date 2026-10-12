@@ -9,6 +9,7 @@ namespace WPRoadie;
 
 use WPRoadie\Abilities\Registry;
 use WPRoadie\Admin\Menu;
+use WPRoadie\Admin\Notices;
 use WPRoadie\Admin\RestApi;
 use WPRoadie\Admin\Updater;
 use WPRoadie\Admin\WpCliCommand;
@@ -44,7 +45,6 @@ final class Plugin {
 
 	public function boot(): void {
 		add_action( 'plugins_loaded', array( $this, 'maybe_upgrade' ) );
-		add_action( 'admin_notices', array( $this, 'adapter_notice' ) );
 		add_action( self::PRUNE_HOOK, array( AuditLog::class, 'prune' ) );
 
 		// The adapter's default server lets any logged-in user (even a
@@ -75,6 +75,7 @@ final class Plugin {
 		( new HqCommands() )->hooks();
 		if ( is_admin() ) {
 			( new Menu() )->hooks();
+			( new Notices() )->hooks();
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -87,27 +88,16 @@ final class Plugin {
 	 * Whether the MCP Adapter plugin is loaded and recent enough.
 	 */
 	public static function adapter_available(): bool {
-		if ( ! class_exists( '\WP\MCP\Core\McpAdapter' ) ) {
-			return false;
-		}
-		if ( defined( 'WP_MCP_VERSION' ) && version_compare( WP_MCP_VERSION, WPROADIE_MCP_ADAPTER_MIN, '<' ) ) {
-			return false;
-		}
-		return true;
-	}
+		$available = class_exists( '\WP\MCP\Core\McpAdapter' )
+			&& ! ( defined( 'WP_MCP_VERSION' ) && version_compare( WP_MCP_VERSION, WPROADIE_MCP_ADAPTER_MIN, '<' ) );
 
-	public function adapter_notice(): void {
-		if ( self::adapter_available() || ! Permission::can_manage() ) {
-			return;
-		}
-		wp_admin_notice(
-			sprintf(
-				/* translators: %s: minimum MCP Adapter version. */
-				esc_html__( 'WPRoadie needs the MCP Adapter plugin (version %s or newer) to be installed and active. AI clients cannot connect until it is.', 'wproadie' ),
-				esc_html( WPROADIE_MCP_ADAPTER_MIN )
-			),
-			array( 'type' => 'error' )
-		);
+		/**
+		 * Filters whether WPRoadie treats the MCP Adapter as loaded and
+		 * recent enough. For tests and unusual setups.
+		 *
+		 * @param bool $available Detected state.
+		 */
+		return (bool) apply_filters( 'wproadie_adapter_available', $available );
 	}
 
 	/**

@@ -3,7 +3,7 @@
  * Plugin Name:       WPRoadie
  * Plugin URI:        https://github.com/HelloOhab/WPRoadie
  * Description:       Lets Claude, Cursor or any MCP client safely read and change this site through WordPress abilities, with modes, guardrails and an audit log.
- * Version:           0.3.0
+ * Version:           0.4.0
  * Requires at least: 6.9
  * Requires PHP:      7.4
  * Author:            Rhythm Collective
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WPROADIE_VERSION', '0.3.0' );
+define( 'WPROADIE_VERSION', '0.4.0' );
 define( 'WPROADIE_FILE', __FILE__ );
 define( 'WPROADIE_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPROADIE_URL', plugin_dir_url( __FILE__ ) );

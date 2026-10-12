@@ -133,9 +133,53 @@ final class Connection {
 	}
 
 	/**
+	 * Checks and tidies an HQ address typed by a person: adds https:// when
+	 * no scheme is given, drops any query, fragment and trailing slash.
+	 *
+	 * @return string|WP_Error
+	 */
+	public static function normalize_url( string $url ) {
+		$url = trim( $url );
+		if ( '' !== $url && ! preg_match( '#^[a-z][a-z0-9+.-]*://#i', $url ) ) {
+			$url = 'https://' . $url;
+		}
+		$parts  = wp_parse_url( $url );
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		$path   = untrailingslashit( (string) ( $parts['path'] ?? '' ) );
+		$valid  = is_array( $parts ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] )
+			&& preg_match( '/^(\[[0-9a-f:.]+\]|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*)$/', $host )
+			&& preg_match( '#^[A-Za-z0-9._~%/-]*$#', $path );
+		if ( ! $valid ) {
+			return self::error( __( 'That does not look like a web address. Enter HQ\'s address, e.g. https://hq.example.com.', 'wproadie' ) );
+		}
+		if ( 'https' !== $scheme && ! ( 'http' === $scheme && self::allow_http() ) ) {
+			return self::error( __( 'The HQ address must be an https:// URL.', 'wproadie' ) );
+		}
+		$port = isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
+		return $scheme . '://' . $host . $port . $path;
+	}
+
+	/**
+	 * A URL's origin (scheme, host and port, default ports left out), for
+	 * comparing two addresses. Empty if the URL has no host.
+	 */
+	public static function origin( string $url ): string {
+		$parts  = wp_parse_url( trim( $url ) );
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		if ( ! is_array( $parts ) || '' === $host ) {
+			return '';
+		}
+		$port    = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+		$default = 'https' === $scheme ? 443 : ( 'http' === $scheme ? 80 : 0 );
+		return $scheme . '://' . $host . ( $port && $port !== $default ? ':' . $port : '' );
+	}
+
+	/**
 	 * Plain-HTTP HQ addresses, for local development only.
 	 */
-	private static function allow_http(): bool {
+	public static function allow_http(): bool {
 		return 'local' === wp_get_environment_type() || (bool) apply_filters( 'wproadie_hq_allow_http', false );
 	}
 
@@ -154,6 +198,13 @@ final class Connection {
 		$padded  = strtr( $value, '-_', '+/' );
 		$padded .= str_repeat( '=', ( 4 - strlen( $padded ) % 4 ) % 4 );
 		return base64_decode( $padded, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Protocol encoding.
+	}
+
+	/**
+	 * Base64url without padding, as the protocol encodes.
+	 */
+	public static function base64url_encode( string $bytes ): string {
+		return rtrim( strtr( base64_encode( $bytes ), '+/', '-_' ), '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Protocol encoding.
 	}
 
 	private static function error( string $message ): WP_Error {

@@ -10,6 +10,7 @@ namespace WPRoadie\Server;
 
 use WP_Error;
 use WP_User;
+use WPRoadie\Safety\Stealth;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -39,6 +40,48 @@ final class Permission {
 	 */
 	public static function can_manage(): bool {
 		return self::can_connect();
+	}
+
+	/**
+	 * Whether the current user may see the setup checklist and take the
+	 * setup steps (install the MCP Adapter, connect to HQ, give themselves
+	 * AI access) without having AI access yet.
+	 *
+	 * Any administrator may, unless stealth mode is on: then only people
+	 * who already have access may, so client admins never see WPRoadie.
+	 * If nobody has access at all (e.g. the plugin was activated over
+	 * WP-CLI), administrators may set it up even in stealth mode, so the
+	 * site cannot be locked out.
+	 */
+	public static function can_set_up(): bool {
+		if ( self::can_manage() ) {
+			return true;
+		}
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return false;
+		}
+		$allowed = ! Stealth::enabled() || ! self::anyone_has_access();
+
+		/**
+		 * Filters whether an administrator without WPRoadie access may use
+		 * the setup checklist and give themselves access.
+		 *
+		 * @param bool $allowed Default: stealth mode off, or nobody has access.
+		 * @param int  $user_id Current user.
+		 */
+		return (bool) apply_filters( 'wproadie_admin_can_set_up', $allowed, get_current_user_id() );
+	}
+
+	/**
+	 * Whether at least one user can connect.
+	 */
+	public static function anyone_has_access(): bool {
+		foreach ( self::granted_users() as $user ) {
+			if ( self::can_connect( (int) $user->ID ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

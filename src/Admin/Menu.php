@@ -28,13 +28,16 @@ final class Menu {
 	}
 
 	/**
-	 * Only WPRoadie users see the menu item; client admins never do.
+	 * WPRoadie users see the full screen. Other administrators see only
+	 * the setup checklist, and only while Permission::can_set_up() allows
+	 * it (never in stealth mode once someone has access).
 	 */
 	public function register(): void {
+		$capability = ! Permission::can_manage() && Permission::can_set_up() ? 'manage_options' : Permission::CAPABILITY;
 		$hook       = add_management_page(
 			__( 'WPRoadie', 'wproadie' ),
 			__( 'WPRoadie', 'wproadie' ),
-			Permission::CAPABILITY,
+			$capability,
 			self::SLUG,
 			array( $this, 'render' )
 		);
@@ -49,7 +52,7 @@ final class Menu {
 	 * @param string $hook_suffix Current admin page.
 	 */
 	public function enqueue( $hook_suffix ): void {
-		if ( $hook_suffix !== $this->hook || ! Permission::can_manage() ) {
+		if ( $hook_suffix !== $this->hook || ! Permission::can_set_up() ) {
 			return;
 		}
 
@@ -65,7 +68,7 @@ final class Menu {
 	}
 
 	public function render(): void {
-		if ( ! Permission::can_manage() ) {
+		if ( ! Permission::can_set_up() ) {
 			wp_die( esc_html__( 'You are not allowed to manage WPRoadie.', 'wproadie' ), 403 );
 		}
 		?>

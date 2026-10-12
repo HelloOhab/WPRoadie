@@ -28,7 +28,7 @@ final class Commands {
 	 * Commands that still run with the kill switch on: they report state
 	 * or take access away, never grant it.
 	 */
-	const ALLOWED_WHEN_DISABLED = array( 'ping', 'heartbeat', 'list_access', 'revoke_credential', 'revoke_user' );
+	const ALLOWED_WHEN_DISABLED = array( 'ping', 'heartbeat', 'list_access', 'list_tools', 'revoke_credential', 'revoke_user' );
 
 	/**
 	 * Result of the signature check for the current request.
@@ -116,7 +116,7 @@ final class Commands {
 	 * @return array{result?: mixed, error?: string, message?: string, status?: int}
 	 */
 	private function run( string $command, array $args ): array {
-		$known = array( 'ping', 'heartbeat', 'list_access', 'provision_credential', 'revoke_credential', 'revoke_user' );
+		$known = array( 'ping', 'heartbeat', 'list_access', 'list_tools', 'provision_credential', 'revoke_credential', 'revoke_user' );
 		if ( ! in_array( $command, $known, true ) ) {
 			return self::fail( 'unknown_command', __( 'Unknown command.', 'wproadie' ), 400 );
 		}
@@ -133,6 +133,9 @@ final class Commands {
 
 			case 'list_access':
 				return array( 'result' => array( 'users' => self::access_list() ) );
+
+			case 'list_tools':
+				return array( 'result' => ToolCatalog::get() );
 
 			case 'provision_credential':
 				return self::provision( $args );
@@ -273,6 +276,13 @@ final class Commands {
 		}
 		if ( is_array( $result ) && isset( $result['site'], $result['versions'] ) ) {
 			return array( 'heartbeat' => 'sent' );
+		}
+		if ( is_array( $result ) && isset( $result['tools_hash'], $result['tools'] ) ) {
+			// The full catalog is large; the count and hash say what was sent.
+			return array(
+				'tools'      => count( $result['tools'] ),
+				'tools_hash' => $result['tools_hash'],
+			);
 		}
 		return $result;
 	}

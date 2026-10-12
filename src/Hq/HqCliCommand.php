@@ -36,13 +36,12 @@ final class HqCliCommand {
 	 * @param array $assoc_args Named arguments.
 	 */
 	public function connect( $args, $assoc_args ) {
-		$config = Connection::connect( (string) $args[0] );
-		if ( is_wp_error( $config ) ) {
-			WP_CLI::error( $config->get_error_message() );
+		$connected = Pairing::connect( (string) $args[0] );
+		if ( is_wp_error( $connected ) ) {
+			WP_CLI::error( $connected->get_error_message() );
 		}
-		Heartbeat::ensure_scheduled();
-
-		$sent = Heartbeat::send();
+		$config = $connected['config'];
+		$sent   = $connected['heartbeat'];
 		if ( is_wp_error( $sent ) ) {
 			WP_CLI::warning( 'Saved, but the first heartbeat failed: ' . $sent->get_error_message() );
 			return;

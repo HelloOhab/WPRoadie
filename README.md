@@ -7,8 +7,9 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 ## Contents
 
 - [What it can do](#what-it-can-do)
+- [Set up a site in four clicks](#set-up-a-site-in-four-clicks)
 - [Requirements](#requirements)
-- [Install](#install-on-a-site) and [roll out to many sites](#rolling-out-to-many-sites)
+- [Install by hand or over SSH](#install-by-hand-or-over-ssh) and [roll out to many sites](#rolling-out-to-many-sites)
 - [Connect an AI client](#connect-an-ai-client)
 - [Safety model](#safety-model)
 - [Undo](#undo)
@@ -39,15 +40,30 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 
 All tools are named `wproadie-<name>` in MCP clients. Every change returns an `undo_id`.
 
+## Set up a site in four clicks
+
+No code, no SSH, no passwords to copy:
+
+1. **Install WPRoadie.** In wp-admin go to **Plugins → Add New → Upload Plugin**, choose `wproadie.zip` (from the [latest release](https://github.com/HelloOhab/WPRoadie/releases/latest)) and activate it.
+2. **Install the MCP Adapter.** Go to **Tools → WPRoadie**. The **Get set up** checklist offers **Install and activate** for the free MCP Adapter plugin WPRoadie needs (it downloads the tested version from GitHub). The same button appears in the notice on every admin screen.
+3. **Connect to HQ.** Check HQ's address (usually filled in already) and click **Connect to HQ**.
+4. **Approve in HQ.** HQ shows the site; an HQ admin clicks **Approve**. You land back on the WPRoadie screen: the site is connected and you have AI access.
+
+Then, to use AI on your sites, add **HQ itself as a connector in Claude** (Settings → Connectors → Add custom connector, address `<your HQ>/mcp`); HQ shows the exact steps. One connector covers every site you have access to, with the site's own safety rules and activity log.
+
+The checklist collapses to a single "All set" line once all three steps are done. Prefer the command line, or not using HQ? See [Install by hand or over SSH](#install-by-hand-or-over-ssh) and [Connect an AI client](#connect-an-ai-client).
+
+**Who sees the checklist.** People with WPRoadie AI access always do. Other administrators see only the checklist (and can give themselves access with **Give me access**) unless stealth mode is on and someone already has access; then WPRoadie stays hidden from them. Only people with access can replace an existing HQ connection. Every self-grant, adapter install and HQ pairing is written to the activity log.
+
 ## Requirements
 
 - WordPress 6.9+, PHP 7.4+
-- The [MCP Adapter](https://github.com/WordPress/mcp-adapter) plugin, **v0.7.0**, installed and active
+- The [MCP Adapter](https://github.com/WordPress/mcp-adapter) plugin, **v0.7.0**, installed and active (WPRoadie installs it for you with one click unless the site sets `DISALLOW_FILE_MODS`)
 - HTTPS, so WordPress allows Application Passwords (the `local` environment type works without it)
 
-> **Why MCP Adapter is a separate plugin, not bundled.** The plan called for bundling a pinned copy via Composer. MCP Adapter 0.7.0 deprecated that: a bundled copy logs a deprecation notice and support will be removed. It cannot be declared with `Requires Plugins` yet either, because it is not on WordPress.org. So WPRoadie checks for it at runtime and shows an admin notice if it is missing. We still pin it: install the v0.7.0 zip, not "latest", and test each upgrade first.
+> **Why MCP Adapter is a separate plugin, not bundled.** The plan called for bundling a pinned copy via Composer. MCP Adapter 0.7.0 deprecated that: a bundled copy logs a deprecation notice and support will be removed. It cannot be declared with `Requires Plugins` yet either, because it is not on WordPress.org. So WPRoadie checks for it at runtime, shows an admin notice if it is missing, and can install, activate or update it with one click. That button installs the pinned release (`https://github.com/WordPress/mcp-adapter/releases/download/v<WPROADIE_MCP_ADAPTER_MIN>/mcp-adapter.zip`; change it with the `wproadie_mcp_adapter_package` filter), never "latest", so test each upgrade first. On multisite only a network administrator can use it.
 
-## Install on a site
+## Install by hand or over SSH
 
 Over SSH (Kinsta gives every site WP-CLI):
 
@@ -97,7 +113,7 @@ The AI acts as you, so everything it does is logged under your name. Keep the pa
 
 ## Safety model
 
-1. **Who can connect.** Only users with `manage_options` **and** the `wproadie_connect` capability. The capability is granted per user, never per role, so client admins do not get AI access by default. It is checked on the HTTP transport and again inside every tool, because STDIO has no transport check. The admin screen and its REST API need the same.
+1. **Who can connect.** Only users with `manage_options` **and** the `wproadie_connect` capability. The capability is granted per user, never per role, so client admins do not get AI access by default. It is checked on the HTTP transport and again inside every tool, because STDIO has no transport check. The admin screen and its REST API need the same, except the setup checklist ([who sees it](#set-up-a-site-in-four-clicks); turn self-setup off with the `wproadie_admin_can_set_up` filter).
 2. **The adapter's default server is off.** It admits any logged-in user, including Subscribers. Turn it back on with `add_filter( 'wproadie_allow_default_server', '__return_true' );`.
 3. **Modes.** Every tool declares a risk level:
 
@@ -119,7 +135,7 @@ The AI acts as you, so everything it does is logged under your name. Keep the pa
 6. **Audit log.** Every call is written to `{prefix}wproadie_log`: user, tool, input, result (capped at 8 KB), status, duration, transport, IP and undo data. Entries older than 365 days are pruned daily (`wproadie_log_retention_days` filter), with their file backups.
 7. **Rate limit.** 120 calls per minute per user by default; change it on the admin screen (0 turns it off).
 8. **Kill switch.** `define( 'WPROADIE_DISABLED', true );` in wp-config.php always wins. The admin button and `wp wproadie disable` do the same from the UI or CLI. The admin screen keeps working so WPRoadie can be turned back on.
-9. **Stealth mode.** Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except WPRoadie users. The menu item is already only visible to them. The connection, log and kill switch keep working.
+9. **Stealth mode.** Hides WPRoadie and MCP Adapter from the Plugins screen and Site Health for everyone except WPRoadie users, and hides the WPRoadie menu and setup checklist from other administrators (unless nobody has access yet, so a site cannot be locked out). The connection, log and kill switch keep working.
 
 Known limits: DNS can change between the URL check and the download (rebinding). `run-php` runs in the same PHP process, so a true fatal error (memory, redeclared function) ends that request; over STDIO that ends the session, and the fatal is logged. Over STDIO, PHP files changed by the AI may be served from the web server's OPcache for up to its `revalidate_freq`.
 
@@ -135,17 +151,19 @@ Not covered: raw SQL writes, PHP snippets, and plugin or theme installs and upda
 
 [WPRoadie HQ](https://github.com/HelloOhab/WPRoadie-HQ) (a separate, private app) shows every site's status in one place and manages the team's connection passwords. Sites report to HQ; AI traffic never goes through it.
 
-**Connect a site:** add it in HQ, which shows a connection string once, then on the site run
+**Connect a site:** click **Connect to HQ** under **Tools → WPRoadie** and approve the site in HQ ([details](#set-up-a-site-in-four-clicks)). Only a one-time code travels in the browser; the site trades it, with a verifier it never sends anywhere else, for its secret. To suggest HQ's address on every site, define `WPROADIE_HQ_DEFAULT_URL` in wp-config.php or use the `wproadie_hq_default_url` filter; otherwise the last address used on the site is suggested.
+
+**Or with a connection string:** add the site in HQ, which shows a connection string once, then on the site run
 
 ```bash
 wp wproadie hq connect 'wproadie-hq:v1:…'
 ```
 
-or paste the string under **Tools → WPRoadie → Overview → WPRoadie HQ**. You can also define `WPROADIE_HQ_URL`, `WPROADIE_HQ_SITE_ID` and `WPROADIE_HQ_SECRET` in wp-config.php.
+or paste it under **Tools → WPRoadie → Get set up → Use a connection string instead**. You can also define `WPROADIE_HQ_URL`, `WPROADIE_HQ_SITE_ID` and `WPROADIE_HQ_SECRET` in wp-config.php.
 
 **What the site sends:** a signed heartbeat every hour (and a minute after the mode, kill switch or tool switches change): versions, mode, who has access, pending updates, Site Health (refreshed every 6 hours) and the last 24 hours of AI activity.
 
-**What HQ can do on the site:** list access, issue and revoke a person's WPRoadie Application Password, and revoke a person entirely when they leave. HQ can only issue passwords to administrators who already have WPRoadie access on that site, only over HTTPS, and never while the kill switch is on. Revocations still work with the kill switch on. Every HQ command appears in the activity log as `hq/…`, user "HQ"; passwords are never logged.
+**What HQ can do on the site:** list access, list the tools the site exposes (so HQ can offer them to Claude as one connector), issue and revoke a person's WPRoadie Application Password, and revoke a person entirely when they leave. HQ can only issue passwords to administrators who already have WPRoadie access on that site, only over HTTPS, and never while the kill switch is on. Revocations still work with the kill switch on. Every HQ command appears in the activity log as `hq/…`, user "HQ"; passwords are never logged.
 
 `wp wproadie hq status` shows the last heartbeat; `wp wproadie hq heartbeat` sends one now; `wp wproadie hq disconnect` stops reporting. The protocol is in [`docs/hq-protocol.md`](docs/hq-protocol.md).
 
@@ -190,6 +208,8 @@ $WP eval-file tests/integration/run.php --user=admin   # all integration tests
 $WP eval-file tests/integration/run.php files --user=admin
 WP="$WP" bash tests/smoke.sh                           # end-to-end over MCP STDIO
 ```
+
+The `adapter` tests download the MCP Adapter from GitHub (and skip with a warning if they cannot); the `hq` tests compare HQ's tool catalog with a real MCP `tools/list`.
 
 With Docker, `npm run env:start` starts wp-env with the same versions.
 

@@ -68,6 +68,84 @@ function hq_test_command( array $body, array $overrides = array() ) {
 	}
 }
 
+/**
+ * The site's real MCP tools/list, from `wp mcp-adapter serve` over STDIO in
+ * a fresh process, as tests/smoke.sh does. A fresh process matters: an MCP
+ * server created earlier in this one keeps the tool set it started with.
+ *
+ * @return array[] Tools as decoded JSON objects (stdClass kept).
+ * @throws RuntimeException When the server gives no tools/list answer.
+ */
+function hq_test_mcp_tools_list(): array {
+	// The WP-CLI running these tests: a phar (CI) or a launcher script.
+	$launcher = (string) realpath( $GLOBALS['argv'][0] );
+	$head     = (string) file_get_contents( $launcher, false, null, 0, 64 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+	$script   = 0 === strpos( $head, '#!' ) && false === strpos( $head, 'php' );
+	$command  = $script ? array( $launcher ) : array( PHP_BINARY, $launcher );
+	$command  = array_merge(
+		$command,
+		array( '--path=' . untrailingslashit( ABSPATH ), '--allow-root', 'mcp-adapter', 'serve', '--server=wproadie', '--user=' . wp_get_current_user()->user_login )
+	);
+
+	$input = implode(
+		"\n",
+		array(
+			wp_json_encode(
+				array(
+					'jsonrpc' => '2.0',
+					'id'      => 0,
+					'method'  => 'initialize',
+					'params'  => array(
+						'protocolVersion' => '2025-11-25',
+						'capabilities'    => new stdClass(),
+						'clientInfo'      => array(
+							'name'    => 'wproadie-tests',
+							'version' => '1',
+						),
+					),
+				)
+			),
+			wp_json_encode(
+				array(
+					'jsonrpc' => '2.0',
+					'id'      => 1,
+					'method'  => 'tools/list',
+					'params'  => new stdClass(),
+				)
+			),
+		)
+	) . "\n";
+
+	// phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open, WordPress.WP.AlternativeFunctions -- Test helper; array command, no shell.
+	$process = proc_open( $command, array( array( 'pipe', 'r' ), array( 'pipe', 'w' ), array( 'pipe', 'w' ) ), $pipes );
+	wproadie_assert( is_resource( $process ), 'could not start wp mcp-adapter serve: ' . wp_json_encode( $command ) );
+	fwrite( $pipes[0], $input );
+	fclose( $pipes[0] );
+	$stdout = (string) stream_get_contents( $pipes[1] );
+	$stderr = (string) stream_get_contents( $pipes[2] );
+	fclose( $pipes[1] );
+	fclose( $pipes[2] );
+	proc_close( $process );
+	// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open, WordPress.WP.AlternativeFunctions
+
+	foreach ( explode( "\n", $stdout ) as $line ) {
+		$message = json_decode( trim( $line ) );
+		if ( isset( $message->id, $message->result->tools ) && 1 === $message->id ) {
+			return $message->result->tools;
+		}
+	}
+	throw new RuntimeException( 'No tools/list response. stdout: ' . substr( $stdout, 0, 300 ) . ' stderr: ' . substr( $stderr, 0, 300 ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Plain-text test output.
+}
+
+/**
+ * JSON for comparing values, with JSON objects kept as objects.
+ *
+ * @param mixed $value Value.
+ */
+function hq_test_json( $value ): string {
+	return (string) wp_json_encode( json_decode( (string) wp_json_encode( $value ) ) );
+}
+
 wproadie_test(
 	'signing reproduces the protocol test vector',
 	function () {
@@ -347,6 +425,68 @@ wproadie_test(
 			wproadie_assert_same( false, Heartbeat::last_result()['ok'] );
 		} finally {
 			remove_filter( 'pre_http_request', $fake, 10 );
+		}
+	}
+);
+
+wproadie_test(
+	'list_tools matches the real MCP tools/list, and the heartbeat carries its hash',
+	function () {
+		$response = hq_test_command( array( 'command' => 'list_tools' ) );
+		wproadie_assert_same( 200, $response->get_status() );
+		$result = $response->get_data()['result'];
+		wproadie_assert_same( false, $result['disabled'] );
+		wproadie_assert( count( $result['tools'] ) > 10, 'expected the full tool set' );
+		wproadie_assert_same( hash( 'sha256', (string) wp_json_encode( $result['tools'] ) ), $result['tools_hash'] );
+		wproadie_assert( (bool) preg_match( '/^[0-9a-f]{64}$/', $result['tools_hash'] ) );
+		wproadie_assert_same( $result['tools_hash'], Heartbeat::payload()['wproadie']['tools_hash'] );
+
+		$real = array();
+		foreach ( hq_test_mcp_tools_list() as $tool ) {
+			$real[ $tool->name ] = $tool;
+		}
+		$ours = array_column( $result['tools'], null, 'name' );
+		wproadie_assert_same( array_keys( $real ), array_keys( $ours ), 'same tools, same order' );
+
+		foreach ( $ours as $name => $tool ) {
+			$mcp = $real[ $name ];
+			wproadie_assert_same( $mcp->title ?? null, $tool['title'], "{$name} title" );
+			wproadie_assert_same( $mcp->description, $tool['description'], "{$name} description" );
+			$schema = $mcp->inputSchema; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- MCP field name.
+			wproadie_assert_same( hq_test_json( $schema ), hq_test_json( $tool['inputSchema'] ), "{$name} inputSchema" );
+			wproadie_assert_same( hq_test_json( $mcp->annotations ?? new stdClass() ), hq_test_json( $tool['annotations'] ), "{$name} annotations" );
+			wproadie_assert( in_array( $tool['risk'], array( 'read', 'write', 'admin', 'dangerous' ), true ), "{$name} risk" );
+		}
+
+		$log = AuditLog::query( array( 'ability' => 'hq/list_tools' ), 1 )['rows'][0];
+		wproadie_assert( false !== strpos( (string) $log->result, $result['tools_hash'] ) );
+	}
+);
+
+wproadie_test(
+	'list_tools follows the tool switches and works with the kill switch on',
+	function () {
+		$before = hq_test_command( array( 'command' => 'list_tools' ) )->get_data()['result'];
+		Settings::set_group( 'users', false );
+		try {
+			$after = hq_test_command( array( 'command' => 'list_tools' ) )->get_data()['result'];
+			wproadie_assert( ! in_array( 'wproadie-list-users', array_column( $after['tools'], 'name' ), true ) );
+			wproadie_assert( $before['tools_hash'] !== $after['tools_hash'], 'hash changes with the tool set' );
+		} finally {
+			Settings::set_group( 'users', true );
+		}
+
+		Settings::set( 'disabled', true );
+		try {
+			$response = hq_test_command( array( 'command' => 'list_tools' ) );
+			wproadie_assert_same( 200, $response->get_status() );
+			$off = $response->get_data()['result'];
+			wproadie_assert_same( true, $off['disabled'] );
+			wproadie_assert_same( array(), $off['tools'] );
+			wproadie_assert_same( hash( 'sha256', '[]' ), $off['tools_hash'] );
+			wproadie_assert_same( $off['tools_hash'], Heartbeat::payload()['wproadie']['tools_hash'] );
+		} finally {
+			Settings::set( 'disabled', false );
 		}
 	}
 );
