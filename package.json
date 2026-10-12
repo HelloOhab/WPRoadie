@@ -1,0 +1,25 @@
+{
+	"name": "wproadie",
+	"private": true,
+	"license": "GPL-2.0-or-later",
+	"scripts": {
+		"build": "wp-scripts build admin/src/index.js --output-path=admin/build",
+		"start": "wp-scripts start admin/src/index.js --output-path=admin/build",
+		"lint:js": "wp-scripts lint-js admin/src",
+		"format": "wp-scripts format admin/src",
+		"env:start": "wp-env start",
+		"env:stop": "wp-env stop",
+		"zip": "bash bin/build-zip.sh"
+	},
+	"devDependencies": {
+		"@wordpress/env": "^11.17.0",
+		"@wordpress/scripts": "^36.1.0"
+	},
+	"dependencies": {
+		"@wordpress/api-fetch": "^7.57.0",
+		"@wordpress/components": "^42.0.0",
+		"@wordpress/compose": "^8.10.0",
+		"@wordpress/element": "^9.0.0",
+		"@wordpress/i18n": "^6.30.0"
+	}
+}
