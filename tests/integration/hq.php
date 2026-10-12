@@ -69,58 +69,72 @@ function hq_test_command( array $body, array $overrides = array() ) {
 }
 
 /**
- * The site's real MCP tools/list, over the HTTP transport, in process.
+ * The site's real MCP tools/list, from `wp mcp-adapter serve` over STDIO in
+ * a fresh process, as tests/smoke.sh does. A fresh process matters: an MCP
+ * server created earlier in this one keeps the tool set it started with.
  *
  * @return array[] Tools as decoded JSON objects (stdClass kept).
+ * @throws RuntimeException When the server gives no tools/list answer.
  */
 function hq_test_mcp_tools_list(): array {
-	$send = static function ( array $body, array $headers = array() ) {
-		$request = new WP_REST_Request( 'POST', '/wproadie/mcp' );
-		$request->set_header( 'Content-Type', 'application/json' );
-		$request->set_header( 'Accept', 'application/json, text/event-stream' );
-		foreach ( $headers as $name => $value ) {
-			$request->set_header( $name, $value );
-		}
-		$request->set_body( (string) wp_json_encode( $body ) );
-		return rest_do_request( $request );
-	};
+	// The WP-CLI running these tests: a phar (CI) or a launcher script.
+	$launcher = (string) realpath( $GLOBALS['argv'][0] );
+	$head     = (string) file_get_contents( $launcher, false, null, 0, 64 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+	$script   = 0 === strpos( $head, '#!' ) && false === strpos( $head, 'php' );
+	$command  = $script ? array( $launcher ) : array( PHP_BINARY, $launcher );
+	$command  = array_merge(
+		$command,
+		array( '--path=' . untrailingslashit( ABSPATH ), '--allow-root', 'mcp-adapter', 'serve', '--server=wproadie', '--user=' . wp_get_current_user()->user_login )
+	);
 
-	$init = $send(
+	$input = implode(
+		"\n",
 		array(
-			'jsonrpc' => '2.0',
-			'id'      => 0,
-			'method'  => 'initialize',
-			'params'  => array(
-				'protocolVersion' => '2025-11-25',
-				'capabilities'    => new stdClass(),
-				'clientInfo'      => array(
-					'name'    => 'wproadie-tests',
-					'version' => '1',
-				),
+			wp_json_encode(
+				array(
+					'jsonrpc' => '2.0',
+					'id'      => 0,
+					'method'  => 'initialize',
+					'params'  => array(
+						'protocolVersion' => '2025-11-25',
+						'capabilities'    => new stdClass(),
+						'clientInfo'      => array(
+							'name'    => 'wproadie-tests',
+							'version' => '1',
+						),
+					),
+				)
+			),
+			wp_json_encode(
+				array(
+					'jsonrpc' => '2.0',
+					'id'      => 1,
+					'method'  => 'tools/list',
+					'params'  => new stdClass(),
+				)
 			),
 		)
-	);
-	wproadie_assert_same( 200, $init->get_status(), 'MCP initialize' );
-	$headers = $init->get_headers();
-	$session = (string) ( $headers['Mcp-Session-Id'] ?? '' );
-	wproadie_assert( '' !== $session, 'MCP session id' );
+	) . "\n";
 
-	$list = $send(
-		array(
-			'jsonrpc' => '2.0',
-			'id'      => 1,
-			'method'  => 'tools/list',
-			'params'  => new stdClass(),
-		),
-		array(
-			'Mcp-Session-Id'       => $session,
-			'MCP-Protocol-Version' => '2025-11-25',
-		)
-	);
-	wproadie_assert_same( 200, $list->get_status(), 'MCP tools/list' );
-	$data = json_decode( (string) wp_json_encode( $list->get_data() ) );
-	wproadie_assert( isset( $data->result->tools ) && is_array( $data->result->tools ), 'tools/list result: ' . substr( (string) wp_json_encode( $data ), 0, 300 ) );
-	return $data->result->tools;
+	// phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open, WordPress.WP.AlternativeFunctions -- Test helper; array command, no shell.
+	$process = proc_open( $command, array( array( 'pipe', 'r' ), array( 'pipe', 'w' ), array( 'pipe', 'w' ) ), $pipes );
+	wproadie_assert( is_resource( $process ), 'could not start wp mcp-adapter serve: ' . wp_json_encode( $command ) );
+	fwrite( $pipes[0], $input );
+	fclose( $pipes[0] );
+	$stdout = (string) stream_get_contents( $pipes[1] );
+	$stderr = (string) stream_get_contents( $pipes[2] );
+	fclose( $pipes[1] );
+	fclose( $pipes[2] );
+	proc_close( $process );
+	// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open, WordPress.WP.AlternativeFunctions
+
+	foreach ( explode( "\n", $stdout ) as $line ) {
+		$message = json_decode( trim( $line ) );
+		if ( isset( $message->id, $message->result->tools ) && 1 === $message->id ) {
+			return $message->result->tools;
+		}
+	}
+	throw new RuntimeException( 'No tools/list response. stdout: ' . substr( $stdout, 0, 300 ) . ' stderr: ' . substr( $stderr, 0, 300 ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Plain-text test output.
 }
 
 /**

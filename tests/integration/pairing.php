@@ -198,7 +198,7 @@ wproadie_test(
 	'pair start checks the HQ address',
 	function () {
 		wproadie_assert_error( Pairing::start( 'not a url at all' ), 'wproadie_hq_invalid' );
-		if ( 'local' !== wp_get_environment_type() ) {
+		if ( ! Connection::allow_http() ) {
 			wproadie_assert_error( Pairing::start( 'http://hq.pair.example.test' ), 'wproadie_hq_invalid' );
 		}
 		add_filter( 'wproadie_hq_allow_http', '__return_true' );
