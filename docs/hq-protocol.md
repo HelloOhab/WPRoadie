@@ -26,7 +26,7 @@ The usual way: no connection string is copied by hand. The secret never appears 
 
 1. In wp-admin (Tools → WPRoadie) an administrator clicks **Connect to HQ** and confirms HQ's address. The address is prefilled from the `WPROADIE_HQ_DEFAULT_URL` constant, the `wproadie_hq_default_url` filter, or the address last used on this site.
 
-2. The plugin (REST `POST wproadie/v1/hq/pair`, same permission as connecting by string) creates a random `state` (32 lowercase hex) and `verifier` (43 base64url characters from 32 random bytes), keeps `{hq_url, verifier, user_id}` for 15 minutes keyed by `state`, and sends the browser to:
+2. The plugin (REST `POST wproadie/v1/hq/pair`, same permission as connecting by string: an administrator with WPRoadie access, or, while the site is not connected yet, any administrator allowed to set WPRoadie up; refused with the kill switch on or when wp-config.php constants define the connection) creates a random `state` (32 lowercase hex) and `verifier` (43 base64url characters from 32 random bytes), keeps `{hq_url, verifier, user_id}` for 15 minutes keyed by `state`, and sends the browser to:
 
    ```
    <hq>/connect?v=1&site_url=…&site_name=…&return_url=…&state=…&challenge=…&wp_user=…&environment=…
@@ -112,7 +112,7 @@ Bodies are JSON (`Content-Type: application/json`). Responses are not signed: th
     "mcp_endpoint": "https://smithdental.com/wp-json/wproadie/mcp",
     "hq_endpoint": "https://smithdental.com/wp-json/wproadie/v1/hq"
   },
-  "versions": { "wordpress": "6.9", "php": "8.3.6", "wproadie": "0.3.0", "mcp_adapter": "0.7.0", "database": "8.0.38" },
+  "versions": { "wordpress": "6.9", "php": "8.3.6", "wproadie": "0.4.0", "mcp_adapter": "0.7.0", "database": "8.0.38" },
   "wproadie": {
     "mode": "production",
     "mode_source": "environment",
@@ -156,7 +156,7 @@ The site answers `200` with `{"ok":true,"result":{…}}`, or `4xx` with `{"ok":f
 
 | Command | Args | Result | Notes |
 | --- | --- | --- | --- |
-| `ping` | – | `{ "version": "0.3.0" }` | Allowed with the kill switch on. |
+| `ping` | – | `{ "version": "0.4.0" }` | Allowed with the kill switch on. |
 | `heartbeat` | – | the heartbeat body | Lets HQ refresh a site on demand. Allowed with the kill switch on. |
 | `list_access` | – | `{ "users": [ { "login", "display_name", "email", "is_admin", "has_access", "passwords": [ { "uuid", "name", "created", "last_used" } ] } ] }` | Users with WPRoadie access, plus their WPRoadie Application Passwords. |
 | `provision_credential` | `wp_user` (login or email), `label` | `{ "username", "uuid", "password" }` | The user must exist, be an administrator and already have WPRoadie access (`wp wproadie grant`): HQ cannot grant access. Refused with the kill switch on, and unless the site is HTTPS (or the environment type is `local`). The password is returned once and never logged. The Application Password is named `WPRoadie HQ – <label>`. |
