@@ -157,6 +157,7 @@ final class Heartbeat {
 				'stealth'           => (bool) Settings::get( 'stealth' ),
 				'rate_limit'        => RateLimit::per_minute(),
 				'tools_exposed'     => $disabled ? 0 : count( $registry->enabled_names_of_type( 'tool' ) ),
+				'tools_hash'        => ToolCatalog::hash( ToolCatalog::tools() ),
 				'users_with_access' => array_values(
 					array_map(
 						static function ( $user ) {
