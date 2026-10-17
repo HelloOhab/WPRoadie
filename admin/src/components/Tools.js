@@ -13,8 +13,11 @@ import { __, sprintf } from '@wordpress/i18n';
 import { errorMessage } from '../api';
 
 /**
- * What the current mode makes of a group: all of its tools, some (e.g. updates but not installs on a live site), or none.
- * @param group
+ * What the current mode makes of a group: all of its tools, some (e.g.
+ * updates but not installs on a live site), or none.
+ *
+ * @param {Object} group A group from the status endpoint.
+ * @return {string} Label.
  */
 const allowanceLabel = ( group ) => {
 	if ( group.partly ) {
