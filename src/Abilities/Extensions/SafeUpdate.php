@@ -178,11 +178,8 @@ final class SafeUpdate {
 
 		if ( self::KIND_PLUGIN === ( $record['type'] ?? '' ) ) {
 			wp_clean_plugins_cache( true );
-			if ( ! empty( $record['active'] ) && ! is_plugin_active( (string) $record['id'] ) ) {
-				$activated = Installer::activate( (string) $record['id'], true );
-				if ( is_wp_error( $activated ) ) {
-					return $activated;
-				}
+			if ( ! empty( $record['active'] ) ) {
+				self::reenable( (string) $record['id'] );
 			}
 		} else {
 			wp_clean_themes_cache( true );
@@ -282,14 +279,12 @@ final class SafeUpdate {
 		$out['log'] = Installer::log( $skin );
 
 		// The upgrader deactivates a plugin while swapping files; put it back.
-		// If the new version refuses to activate, that is the update's fault:
-		// verify() below turns it into a rollback.
-		$reactivation = null;
-		if ( ! is_wp_error( $outcome ) && self::KIND_PLUGIN === $item['kind'] && ! empty( $record['active'] ) && ! is_plugin_active( $id ) && array_key_exists( $id, get_plugins() ) ) {
-			$reactivated = Installer::activate( $id, true );
-			if ( is_wp_error( $reactivated ) ) {
-				$reactivation = $reactivated->get_error_message();
-			}
+		// Not with activate_plugin(): that loads the new files into this
+		// process, which already has the old version loaded, and PHP dies on
+		// the first redeclared function. The new code runs on the next
+		// request, which is exactly what the health probe below loads.
+		if ( ! is_wp_error( $outcome ) && self::KIND_PLUGIN === $item['kind'] && ! empty( $record['active'] ) && array_key_exists( $id, get_plugins() ) ) {
+			self::reenable( $id );
 		}
 
 		if ( is_wp_error( $outcome ) ) {
@@ -303,9 +298,6 @@ final class SafeUpdate {
 
 		self::trace( 'verify ' . $item['id'] );
 		$problem = self::verify( $item, $probe );
-		if ( null === $problem && null !== $reactivation ) {
-			$problem = $reactivation;
-		}
 		if ( null !== $problem ) {
 			$restored       = self::restore( $record );
 			$out['status']  = is_wp_error( $restored ) ? 'broken' : 'rolled_back';
@@ -415,7 +407,24 @@ final class SafeUpdate {
 			'backup'  => $backup,
 			'version' => $version,
 			'active'  => self::KIND_PLUGIN === $kind ? is_plugin_active( $id ) : get_stylesheet() === $id,
+			'network' => self::KIND_PLUGIN === $kind && is_multisite() && is_plugin_active_for_network( $id ),
 		);
+	}
+
+	/**
+	 * Marks a plugin active again without loading it (see update_one()).
+	 * Mirrors what activate_plugin() stores, minus the include and hooks.
+	 */
+	private static function reenable( string $plugin_file ): void {
+		if ( is_multisite() && is_plugin_active_for_network( $plugin_file ) ) {
+			return;
+		}
+		$active = (array) get_option( 'active_plugins', array() );
+		if ( ! in_array( $plugin_file, $active, true ) ) {
+			$active[] = $plugin_file;
+			sort( $active );
+			update_option( 'active_plugins', $active );
+		}
 	}
 
 	/** After a failed upgrader run: the old version must still be there. */

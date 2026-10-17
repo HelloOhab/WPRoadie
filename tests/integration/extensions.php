@@ -346,7 +346,7 @@ wproadie_test(
 			$serve = $broken;
 			$offer( '1.2.0' );
 			wproadie_trace( 'apply-updates: broken update' );
-			$rolled = wproadie_ok( wproadie_call( 'apply-updates', array( 'all' => true ) ) );
+			$rolled = wproadie_ok( wproadie_call( 'apply-updates', array( 'plugins' => array( $file ) ) ) );
 			$item   = null;
 			foreach ( $rolled['results'] as $r ) {
 				if ( $r['id'] === $file ) {

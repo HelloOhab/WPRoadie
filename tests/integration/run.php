@@ -31,7 +31,7 @@ function wproadie_trace( string $message ): void {
 	}
 }
 if ( getenv( 'WPROADIE_TEST_TRACE' ) ) {
-	ini_set( 'log_errors', '1' ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+	ini_set( 'log_errors', '1' ); // phpcs:ignore WordPress.PHP.IniSet.Risky, WordPress.PHP.IniSet.log_errors_Disallowed
 	ini_set( 'error_log', (string) getenv( 'WPROADIE_TEST_TRACE' ) ); // phpcs:ignore WordPress.PHP.IniSet.Risky
 }
 
