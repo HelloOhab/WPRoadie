@@ -64,7 +64,7 @@ The checklist collapses to a single "All set" line once all three steps are done
 ## Requirements
 
 - WordPress 6.9+, PHP 7.4+
-- The [MCP Adapter](https://github.com/WordPress/mcp-adapter) plugin, **v0.7.0**, installed and active (WPRoadie installs it for you with one click unless the site sets `DISALLOW_FILE_MODS`)
+- The [MCP Adapter](https://github.com/WordPress/mcp-adapter) plugin, **v0.7.1**, installed and active (WPRoadie installs it for you with one click unless the site sets `DISALLOW_FILE_MODS`)
 - HTTPS, so WordPress allows Application Passwords (the `local` environment type works without it)
 
 > **Why MCP Adapter is a separate plugin, not bundled.** The plan called for bundling a pinned copy via Composer. MCP Adapter 0.7.0 deprecated that: a bundled copy logs a deprecation notice and support will be removed. It cannot be declared with `Requires Plugins` yet either, because it is not on WordPress.org. So WPRoadie checks for it at runtime, shows an admin notice if it is missing, and can install, activate or update it with one click. That button installs the pinned release (`https://github.com/WordPress/mcp-adapter/releases/download/v<WPROADIE_MCP_ADAPTER_MIN>/mcp-adapter.zip`; change it with the `wproadie_mcp_adapter_package` filter), never "latest", so test each upgrade first. On multisite only a network administrator can use it.
@@ -74,7 +74,7 @@ The checklist collapses to a single "All set" line once all three steps are done
 Over SSH (Kinsta gives every site WP-CLI):
 
 ```bash
-wp plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate
+wp plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.1/mcp-adapter.zip --activate
 wp plugin install /path/to/wproadie.zip --activate
 wp wproadie grant <your-username>
 wp wproadie status
@@ -207,7 +207,7 @@ npm run lint:js
 npm run zip                    # dist/wproadie.zip
 ```
 
-**A test site without Docker:** `bin/test-site.sh` builds WordPress 6.9 on SQLite with MCP Adapter 0.7.0 and this plugin symlinked in, grants `admin`, and switches every tool group on. CI uses it.
+**A test site without Docker:** `bin/test-site.sh` builds WordPress 6.9 on SQLite with MCP Adapter 0.7.1 and this plugin symlinked in, grants `admin`, and switches every tool group on. CI uses it.
 
 ```bash
 bash bin/test-site.sh /tmp/roadie
