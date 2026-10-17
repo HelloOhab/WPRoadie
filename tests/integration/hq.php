@@ -232,12 +232,22 @@ wproadie_test(
 		$result = hq_test_command( array( 'command' => 'heartbeat' ) )->get_data()['result'];
 		wproadie_assert_same( 1, $result['schema'] );
 		wproadie_assert_same( HQ_TEST_SITE, $result['site_id'] );
-		foreach ( array( 'site', 'versions', 'wproadie', 'updates', 'health', 'activity' ) as $section ) {
+		foreach ( array( 'site', 'versions', 'wproadie', 'stack', 'updates', 'health', 'activity' ) as $section ) {
 			wproadie_assert( array_key_exists( $section, $result ), $section . ' missing' );
 		}
 		wproadie_assert_same( WPROADIE_VERSION, $result['versions']['wproadie'] );
 		wproadie_assert( false !== strpos( $result['site']['hq_endpoint'], 'wproadie/v1/hq' ) );
 		wproadie_assert( in_array( wp_get_current_user()->user_login, $result['wproadie']['users_with_access'], true ) );
+
+		// The stack: theme, builders and active plugins (WPRoadie itself among them).
+		wproadie_assert_same( wp_get_theme()->get_stylesheet(), $result['stack']['theme']['stylesheet'] );
+		wproadie_assert( array_key_exists( 'divi', $result['stack']['builders'] ) && array_key_exists( 'elementor', $result['stack']['builders'] ) );
+		wproadie_assert_same( defined( 'ELEMENTOR_VERSION' ) ? ELEMENTOR_VERSION : null, $result['stack']['builders']['elementor'] );
+		$files = array_column( $result['stack']['plugins'], 'file' );
+		wproadie_assert( in_array( plugin_basename( WPROADIE_FILE ), $files, true ), wp_json_encode( $files ) );
+		foreach ( $result['stack']['plugins'] as $plugin ) {
+			wproadie_assert( is_plugin_active( $plugin['file'] ), $plugin['file'] . ' is listed but not active' );
+		}
 	}
 );
 
