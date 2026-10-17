@@ -183,6 +183,57 @@ wproadie_test(
 );
 
 wproadie_test(
+	'a copy of the site (new address, same database) stays silent until a person decides',
+	function () {
+		$sent   = 0;
+		$count  = function ( $pre ) use ( &$sent ) {
+			unset( $pre );
+			$sent++;
+			return new WP_Error( 'offline', 'no network in this test' );
+		};
+		$copied = static function ( $url ) {
+			return preg_replace( '#^https?://[^/]+#', 'https://stg-copy.example.test', $url );
+		};
+		wproadie_assert_same( null, Connection::moved(), 'the connection was made here' );
+		add_filter( 'pre_http_request', $count, 10, 3 );
+		add_filter( 'home_url', $copied );
+		try {
+			$moved = Connection::moved();
+			wproadie_assert( is_array( $moved ) && 0 === strpos( $moved['to'], 'stg-copy.example.test' ), wp_json_encode( $moved ) );
+			wproadie_assert( Connection::is_connected(), 'still connected, just on hold' );
+
+			wproadie_assert_error( Heartbeat::send(), 'wproadie_hq_site_moved' );
+			Heartbeat::goodbye( 'deactivated' );
+			wproadie_assert_same( 0, $sent, 'a copy must not report or say goodbye as the original site' );
+			wproadie_assert_same( false, Heartbeat::last_result()['ok'] );
+
+			// "The site moved here": the connection continues from the new address.
+			$request = new WP_REST_Request( 'POST', '/wproadie/v1/hq/moved' );
+			$request->set_param( 'keep', true );
+			$response = rest_do_request( $request );
+			wproadie_assert_same( 200, $response->get_status(), wp_json_encode( $response->get_data() ) );
+			wproadie_assert_same( null, Connection::moved() );
+			wproadie_assert( Connection::is_connected() );
+
+			// Back on the original address that now looks like the copy: "this is a copy" drops it quietly.
+			remove_filter( 'home_url', $copied );
+			wproadie_assert( is_array( Connection::moved() ) );
+			$request = new WP_REST_Request( 'POST', '/wproadie/v1/hq/moved' );
+			$request->set_param( 'keep', false );
+			wproadie_assert_same( 200, rest_do_request( $request )->get_status() );
+			wproadie_assert( ! Connection::is_connected(), 'the copy forgets the connection' );
+			wproadie_assert_same( 0, $sent, 'and tells HQ nothing' );
+		} finally {
+			remove_filter( 'home_url', $copied );
+			remove_filter( 'pre_http_request', $count, 10 );
+			// The rest of this group needs the connection.
+			Connection::connect( hq_test_string() );
+		}
+		wproadie_assert_same( null, Connection::moved() );
+	}
+);
+
+wproadie_test(
 	'ping answers a correctly signed command',
 	function () {
 		$response = hq_test_command( array( 'command' => 'ping' ) );

@@ -7,7 +7,7 @@ import {
 } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import { errorMessage } from '../api';
+import { api, errorMessage } from '../api';
 import Confirm from './Confirm';
 
 /**
@@ -35,6 +35,79 @@ export default function HqCard( { status, saveSettings } ) {
 	const last = hq.last;
 	if ( ! hq.connected ) {
 		return null;
+	}
+
+	const answerMoved = ( keep ) => {
+		setBusy( true );
+		setError( null );
+		return api
+			.hqMoved( keep )
+			.then( () => saveSettings( {} ) )
+			.catch( ( err ) => setError( errorMessage( err ) ) )
+			.finally( () => setBusy( false ) );
+	};
+
+	if ( hq.moved ) {
+		return (
+			<Card>
+				<CardHeader>
+					<h2>{ __( 'WPRoadie HQ', 'wproadie' ) }</h2>
+				</CardHeader>
+				<CardBody>
+					{ error && (
+						<Notice
+							status="error"
+							onRemove={ () => setError( null ) }
+						>
+							{ error }
+						</Notice>
+					) }
+					<Notice status="warning" isDismissible={ false }>
+						<p>
+							{ sprintf(
+								/* translators: 1: this site's address, 2: the address the connection was made on */
+								__(
+									'This WordPress is at %1$s, but its HQ connection was made at %2$s. That usually means this is a copy of that site, for example a staging site refreshed from live. Until you choose below, this site does not report to HQ, so HQ keeps showing the original site correctly.',
+									'wproadie'
+								),
+								hq.moved.to,
+								hq.moved.from
+							) }
+						</p>
+					</Notice>
+					<div className="wproadie-inline-form">
+						<Button
+							variant="primary"
+							isBusy={ busy }
+							disabled={ busy }
+							onClick={ () => answerMoved( false ) }
+						>
+							{ __(
+								'This is a copy: forget the connection',
+								'wproadie'
+							) }
+						</Button>
+						<Button
+							variant="secondary"
+							isBusy={ busy }
+							disabled={ busy }
+							onClick={ () => answerMoved( true ) }
+						>
+							{ __(
+								'The site moved here: keep the connection',
+								'wproadie'
+							) }
+						</Button>
+					</div>
+					<p className="description">
+						{ __(
+							'After forgetting the connection, use “Connect to HQ” in the setup steps to add this site to HQ as its own site.',
+							'wproadie'
+						) }
+					</p>
+				</CardBody>
+			</Card>
+		);
 	}
 
 	return (

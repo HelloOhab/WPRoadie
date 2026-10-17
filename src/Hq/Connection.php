@@ -103,13 +103,77 @@ final class Connection {
 		if ( is_wp_error( $config ) ) {
 			return $config;
 		}
-		update_option( self::OPTION, $config, false );
+		update_option( self::OPTION, $config + array( 'home' => self::current_home() ), false );
 		return $config;
 	}
 
+	/**
+	 * Disconnects from HQ. Says goodbye first so HQ marks the site off at
+	 * once, unless this is a copy of the connected site (see moved()): the
+	 * goodbye would then tell HQ the original site was gone.
+	 */
 	public static function disconnect(): void {
-		Heartbeat::goodbye( 'disconnected' );
+		if ( ! self::moved() ) {
+			Heartbeat::goodbye( 'disconnected' );
+		}
+		self::forget();
+	}
+
+	/** Drops the connection without telling HQ. */
+	public static function forget(): void {
 		delete_option( self::OPTION );
+		Heartbeat::unschedule();
+	}
+
+	/**
+	 * Whether this WordPress is not the site the connection was made on.
+	 *
+	 * Hosts clone the database when they refresh a staging site from live
+	 * (and when they push staging to live), connection and all. If the copy
+	 * then reported to HQ as the original, HQ would mix the two sites up,
+	 * so WPRoadie compares the address the connection was made on with the
+	 * address now and holds everything until a person says which it is.
+	 *
+	 * @return array{from: string, to: string}|null The addresses, when they differ.
+	 */
+	public static function moved(): ?array {
+		if ( self::from_constants() ) {
+			return null;
+		}
+		$stored = get_option( self::OPTION );
+		$home   = is_array( $stored ) ? (string) ( $stored['home'] ?? '' ) : '';
+		if ( '' === $home || self::current_home() === $home ) {
+			return null;
+		}
+		return array(
+			'from' => $home,
+			'to'   => self::current_home(),
+		);
+	}
+
+	/**
+	 * Records the current address as the connection's own: after a real
+	 * move (new domain), or for a connection made before 0.9.1.
+	 */
+	public static function adopt_home(): void {
+		$stored = get_option( self::OPTION );
+		if ( is_array( $stored ) && ! self::from_constants() ) {
+			$stored['home'] = self::current_home();
+			update_option( self::OPTION, $stored, false );
+		}
+	}
+
+	/** Records the current address only when none is on record yet (older connections). */
+	public static function adopt_home_if_missing(): void {
+		$stored = get_option( self::OPTION );
+		if ( is_array( $stored ) && empty( $stored['home'] ) ) {
+			self::adopt_home();
+		}
+	}
+
+	/** The site's address as compared for moved(): host and path, no scheme. */
+	public static function current_home(): string {
+		return strtolower( untrailingslashit( (string) preg_replace( '#^https?://#i', '', home_url() ) ) );
 	}
 
 	/**

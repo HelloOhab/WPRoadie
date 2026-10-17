@@ -96,6 +96,7 @@ final class RestApi {
 			'/hq/connect'      => array( WP_REST_Server::CREATABLE, 'hq_connect', 'can_change_hq' ),
 			'/hq/pair'         => array( WP_REST_Server::CREATABLE, 'hq_pair', 'can_change_hq' ),
 			'/hq/pair/finish'  => array( WP_REST_Server::CREATABLE, 'hq_pair_finish', 'can_change_hq' ),
+			'/hq/moved'        => array( WP_REST_Server::CREATABLE, 'hq_moved', 'can_change_hq' ),
 		);
 		foreach ( $setup as $route => $endpoint ) {
 			register_rest_route(
@@ -219,6 +220,29 @@ final class RestApi {
 	 *
 	 * @return array|WP_Error
 	 */
+	/**
+	 * Answers the "this site's address changed" question: keep the
+	 * connection (the site moved) or drop it quietly (this is a copy).
+	 */
+	public function hq_moved( WP_REST_Request $request ) {
+		if ( ! HqConnection::moved() ) {
+			return array(
+				'ok'        => true,
+				'connected' => HqConnection::is_connected(),
+			);
+		}
+		if ( rest_sanitize_boolean( $request->get_param( 'keep' ) ) ) {
+			HqConnection::adopt_home();
+			HqHeartbeat::send_soon();
+		} else {
+			HqConnection::forget();
+		}
+		return array(
+			'ok'        => true,
+			'connected' => HqConnection::is_connected(),
+		);
+	}
+
 	public function hq_pair_finish( WP_REST_Request $request ) {
 		return HqPairing::finish( (string) $request->get_param( 'code' ), (string) $request->get_param( 'state' ) );
 	}
@@ -326,6 +350,7 @@ final class RestApi {
 			'url'            => $config ? $config['url'] : null,
 			'site_id'        => $config ? $config['site_id'] : null,
 			'from_constants' => HqConnection::from_constants(),
+			'moved'          => HqConnection::moved(),
 			'last'           => $last ? array(
 				'at'    => gmdate( 'c', (int) $last['at'] ),
 				'ok'    => (bool) $last['ok'],
