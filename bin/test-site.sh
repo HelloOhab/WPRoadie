@@ -13,7 +13,7 @@ set -euo pipefail
 
 DIR="${1:?Usage: bash bin/test-site.sh <dir> [wordpress-version]}"
 WP_VERSION="${2:-6.9}"
-ADAPTER_ZIP="https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip"
+ADAPTER_ZIP="https://github.com/WordPress/mcp-adapter/releases/download/v0.7.1/mcp-adapter.zip"
 SQLITE_TAG="v3.1.0"
 PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
