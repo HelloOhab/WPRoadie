@@ -8,9 +8,10 @@
  *
  * Covered: posts and pages (with a WordPress revision for history), post
  * creation and trashing, post/term/user meta, post terms, term creation,
- * options, theme mods, files, user roles and creation, plugin activation
- * and theme switches. Raw SQL writes and plugin installs/updates cannot be
- * undone this way.
+ * options, theme mods, files, user roles and creation, plugin activation,
+ * theme switches, and plugin and theme updates (the previous version is
+ * kept in wp-content/wproadie/backups). Raw SQL writes and plugin
+ * installs cannot be undone this way.
  *
  * @package WPRoadie
  */
@@ -19,6 +20,7 @@ namespace WPRoadie\Log;
 
 use WP_Error;
 use WPRoadie\Abilities\Extensions\Installer;
+use WPRoadie\Abilities\Extensions\SafeUpdate;
 use WPRoadie\Abilities\Files\FileTools;
 use WPRoadie\Safety\Guardrails;
 
@@ -477,6 +479,9 @@ final class Undo {
 				}
 				deactivate_plugins( $plugin );
 				return true;
+
+			case 'extension':
+				return SafeUpdate::restore( $r );
 
 			case 'theme_switch':
 				$theme = wp_get_theme( (string) $r['stylesheet'] );

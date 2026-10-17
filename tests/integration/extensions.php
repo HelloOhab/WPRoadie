@@ -235,6 +235,156 @@ wproadie_test(
 	}
 );
 
+/**
+ * Builds a zip of a one-folder plugin with the given main-file body.
+ */
+function extensions_test_plugin_zip( string $dir, string $main_file, string $body ): string {
+	require_once ABSPATH . 'wp-admin/includes/class-pclzip.php';
+	$work = trailingslashit( get_temp_dir() ) . 'wproadie-zip-' . wp_generate_password( 6, false );
+	wp_mkdir_p( $work . '/' . $dir );
+	file_put_contents( $work . '/' . $dir . '/' . $main_file, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+	$zip     = $work . '.zip';
+	$archive = new PclZip( $zip );
+	$made    = $archive->create( $work . '/' . $dir, PCLZIP_OPT_REMOVE_PATH, $work );
+	wproadie_assert( 0 !== $made, 'zip failed: ' . $archive->errorInfo( true ) );
+	return $zip;
+}
+
+function extensions_test_plugin_body( string $version, string $extra = '' ): string {
+	return "<?php\n/**\n * Plugin Name: WPRoadie Test Plugin\n * Version: {$version}\n */\n{$extra}\n";
+}
+
+wproadie_test(
+	'apply-updates backs up, updates, can be undone, and rolls back a broken update',
+	function () {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		$dir  = 'wproadie-test-plugin';
+		$file = $dir . '/wproadie-test-plugin.php';
+		$path = WP_PLUGIN_DIR . '/' . $dir;
+		wp_mkdir_p( $path );
+		file_put_contents( $path . '/wproadie-test-plugin.php', extensions_test_plugin_body( '1.0.0' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		wp_clean_plugins_cache( false );
+		wproadie_assert_same( '1.0.0', get_plugins()[ $file ]['Version'] );
+
+		$good   = extensions_test_plugin_zip( $dir, 'wproadie-test-plugin.php', extensions_test_plugin_body( '1.1.0' ) );
+		$broken = extensions_test_plugin_zip( $dir, 'wproadie-test-plugin.php', extensions_test_plugin_body( '1.2.0', 'function (' ) );
+		$serve  = $good;
+		// The update "download": WordPress asks for the package URL and gets a
+		// copy of our local zip (the upgrader deletes the file it was given).
+		$download = static function ( $reply, $package ) use ( &$serve ) {
+			if ( 'https://updates.example.test/wproadie-test-plugin.zip' !== $package ) {
+				return $reply;
+			}
+			$copy = trailingslashit( get_temp_dir() ) . 'wproadie-serve-' . wp_generate_password( 6, false ) . '.zip';
+			copy( $serve, $copy );
+			return $copy;
+		};
+		add_filter( 'upgrader_pre_download', $download, 10, 2 );
+		$offer = static function ( string $version ) use ( $file ) {
+			$current           = get_site_transient( 'update_plugins' );
+			$current           = is_object( $current ) ? $current : (object) array( 'response' => array() );
+			$current->response = array(
+				$file => (object) array(
+					'plugin'      => $file,
+					'slug'        => 'wproadie-test-plugin',
+					'new_version' => $version,
+					'package'     => 'https://updates.example.test/wproadie-test-plugin.zip',
+				),
+			);
+			set_site_transient( 'update_plugins', $current );
+			// As on real sites: cron rebuilds the transient without the premium
+			// updater's offer, and WPRoadie must still remember it.
+			$current->response = array();
+			set_site_transient( 'update_plugins', $current );
+		};
+
+		try {
+			activate_plugin( $file );
+			$offer( '1.1.0' );
+
+			$plan = wproadie_ok(
+				wproadie_call(
+					'apply-updates',
+					array(
+						'plugins' => array( $file, 'nope/nope.php' ),
+						'dry_run' => true,
+					)
+				)
+			);
+			wproadie_assert_same(
+				array(
+					array(
+						'kind' => 'plugin',
+						'id'   => $file,
+						'name' => 'WPRoadie Test Plugin',
+						'from' => '1.0.0',
+						'to'   => '1.1.0',
+					),
+				),
+				$plan['items']
+			);
+			wproadie_assert_same( 'not_installed', $plan['skipped'][0]['reason'] );
+			wproadie_assert_same( '1.0.0', get_plugins()[ $file ]['Version'], 'a dry run changes nothing' );
+
+			wproadie_trace( 'apply-updates: good update' );
+			$result = wproadie_ok( wproadie_call( 'apply-updates', array( 'plugins' => array( $file ) ) ) );
+			wproadie_assert_same( 1, $result['updated'], wp_json_encode( $result ) );
+			wproadie_assert_same( 'updated', $result['results'][0]['status'] );
+			wproadie_assert_same( '1.1.0', get_plugins()[ $file ]['Version'] );
+			wproadie_assert( is_plugin_active( $file ), 'the plugin should be active again after the update' );
+			wproadie_assert( ! empty( $result['undo_id'] ), 'an update must be undoable' );
+			$backups = glob( WP_CONTENT_DIR . '/wproadie/backups/*-plugin-wproadie-test-plugin-1.0.0-*' );
+			wproadie_assert( $backups && is_dir( $backups[0] ), 'the previous version should be kept' );
+
+			$undone = Undo::revert( (int) $result['undo_id'] );
+			wproadie_assert( ! is_wp_error( $undone ) && ! $undone['errors'], 'undo failed: ' . wp_json_encode( $undone ) );
+			wp_clean_plugins_cache( false );
+			wproadie_assert_same( '1.0.0', get_plugins()[ $file ]['Version'], 'undo should put 1.0.0 back' );
+			wproadie_assert( is_plugin_active( $file ), 'undo should leave the plugin active' );
+
+			// A release whose main file does not parse is rolled back before it can take the site down.
+			$serve = $broken;
+			$offer( '1.2.0' );
+			wproadie_trace( 'apply-updates: broken update' );
+			$rolled = wproadie_ok( wproadie_call( 'apply-updates', array( 'plugins' => array( $file ) ) ) );
+			$item   = null;
+			foreach ( $rolled['results'] as $r ) {
+				if ( $r['id'] === $file ) {
+					$item = $r;
+				}
+			}
+			wproadie_assert( $item, wp_json_encode( $rolled ) );
+			wproadie_assert_same( 'rolled_back', $item['status'], $item['message'] );
+			wproadie_assert_same( 1, $rolled['rolled_back'] );
+			wp_clean_plugins_cache( false );
+			wproadie_assert_same( '1.0.0', get_plugins()[ $file ]['Version'], 'the previous version should be back' );
+			wproadie_assert( is_plugin_active( $file ) );
+			wproadie_assert( empty( $rolled['undo_id'] ), 'nothing to undo after a rollback' );
+
+			// update-plugin takes the same safe path.
+			$serve = $good;
+			$offer( '1.1.0' );
+			wproadie_trace( 'apply-updates: update-plugin' );
+			$single = wproadie_ok( wproadie_call( 'update-plugin', array( 'plugin' => $file ) ) );
+			wproadie_assert_same( '1.1.0', $single['version'] );
+			wproadie_assert_same( '1.0.0', $single['previous_version'] );
+			wproadie_assert( ! empty( $single['undo_id'] ) );
+		} finally {
+			remove_filter( 'upgrader_pre_download', $download, 10 );
+			deactivate_plugins( $file, true );
+			global $wp_filesystem;
+			WP_Filesystem();
+			$wp_filesystem->delete( $path, true );
+			foreach ( (array) glob( WP_CONTENT_DIR . '/wproadie/backups/*-plugin-wproadie-test-plugin-*' ) as $b ) {
+				$wp_filesystem->delete( $b, true );
+			}
+			\WPRoadie\Safety\PendingUpdates::forget();
+			delete_site_transient( 'update_plugins' );
+			wp_clean_plugins_cache( false );
+		}
+	}
+);
+
 wproadie_test(
 	'install-theme validates its source and fails cleanly by slug',
 	function () {

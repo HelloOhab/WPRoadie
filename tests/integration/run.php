@@ -21,6 +21,32 @@ if ( ! defined( 'ABSPATH' ) ) {
 $GLOBALS['wproadie_tests'] = array();
 
 /**
+ * Appends a line to the trace file named by WPROADIE_TEST_TRACE (CI prints
+ * it when the run dies), and sends PHP's own error log there too.
+ */
+function wproadie_trace( string $message ): void {
+	$file = getenv( 'WPROADIE_TEST_TRACE' );
+	if ( $file ) {
+		file_put_contents( $file, gmdate( 'H:i:s' ) . ' ' . $message . "\n", FILE_APPEND ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+	}
+}
+if ( getenv( 'WPROADIE_TEST_TRACE' ) ) {
+	ini_set( 'log_errors', '1' ); // phpcs:ignore WordPress.PHP.IniSet.Risky, WordPress.PHP.IniSet.log_errors_Disallowed
+	ini_set( 'error_log', (string) getenv( 'WPROADIE_TEST_TRACE' ) ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+}
+
+// A fatal error inside a test is otherwise silent when it happens while
+// output is buffered (the upgrader runs that way): say what and where.
+register_shutdown_function(
+	static function () {
+		$error = error_get_last();
+		if ( $error && in_array( $error['type'], array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR ), true ) ) {
+			fwrite( STDERR, sprintf( "\nFATAL: %s in %s:%d\n", $error['message'], $error['file'], $error['line'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+		}
+	}
+);
+
+/**
  * Registers a test.
  *
  * @param string   $name Test name.
@@ -133,6 +159,7 @@ foreach ( $groups as $group ) {
 	require $file;
 	WP_CLI::log( "== {$group}" );
 	foreach ( $GLOBALS['wproadie_tests'] as $test ) {
+		wproadie_trace( 'START ' . $test[0] );
 		list( $name, $fn ) = $test;
 		try {
 			$fn();

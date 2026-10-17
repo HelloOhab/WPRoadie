@@ -7,7 +7,6 @@
 
 namespace WPRoadie\Abilities\Extensions;
 
-use Theme_Upgrader;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Safety\Mode;
 use WPRoadie\Safety\PendingUpdates;
@@ -123,21 +122,31 @@ final class UpdateTheme extends AbilityBase {
 			);
 		}
 
-		$skin     = Installer::skin();
-		$upgrader = new Theme_Upgrader( $skin );
-		$result   = Installer::quietly(
-			static function () use ( $upgrader, $stylesheet ) {
-				return $upgrader->upgrade( $stylesheet );
+		$run    = SafeUpdate::run(
+			array(
+				array(
+					'kind' => SafeUpdate::KIND_THEME,
+					'id'   => $stylesheet,
+					'name' => $before['name'],
+					'from' => $before['version'],
+					'to'   => (string) ( $updates->response[ $stylesheet ]['new_version'] ?? '' ),
+				),
+			),
+			true,
+			function ( array $record ) {
+				$this->add_undo( $record );
 			}
 		);
-		$outcome  = Installer::outcome( $result, $skin );
-		if ( is_wp_error( $outcome ) ) {
-			return $outcome;
+		$result = $run['results'][0];
+		if ( 'updated' !== $result['status'] ) {
+			return $this->error( 'rolled_back' === $result['status'] ? 'update_rolled_back' : 'update_failed', $result['message'], 500 );
 		}
-
 		$summary                     = Installer::theme_summary( $stylesheet );
 		$summary['previous_version'] = $before['version'];
-		$summary['log']              = Installer::log( $skin );
+		$summary['status']           = $result['status'];
+		$summary['message']          = $result['message'];
+		$summary['log']              = $result['log'];
+		$summary['health']           = $run['health'];
 		return $summary;
 	}
 }

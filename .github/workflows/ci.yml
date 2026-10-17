@@ -56,7 +56,12 @@ jobs:
       - if: matrix.elementor
         run: bash bin/test-elementor.sh "$RUNNER_TEMP/site" ${{ matrix.elementor }}
       - name: Integration tests
-        run: php "$RUNNER_TEMP/site/wp-cli.phar" --path="$RUNNER_TEMP/site/wordpress" --allow-root eval-file tests/integration/run.php --user=admin
+        env:
+          WPROADIE_TEST_TRACE: ${{ runner.temp }}/wproadie-trace.log
+        run: php -d display_errors=stderr "$RUNNER_TEMP/site/wp-cli.phar" --path="$RUNNER_TEMP/site/wordpress" --allow-root eval-file tests/integration/run.php --user=admin
+      - name: Trace of the failed run
+        if: failure()
+        run: cat "$RUNNER_TEMP/wproadie-trace.log" 2>/dev/null || echo "no trace"
       - name: MCP smoke test
         run: WP="php $RUNNER_TEMP/site/wp-cli.phar --path=$RUNNER_TEMP/site/wordpress --allow-root" bash tests/smoke.sh
 

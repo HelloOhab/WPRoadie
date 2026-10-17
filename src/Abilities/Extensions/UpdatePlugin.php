@@ -7,7 +7,6 @@
 
 namespace WPRoadie\Abilities\Extensions;
 
-use Plugin_Upgrader;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Safety\Guardrails;
 use WPRoadie\Safety\Mode;
@@ -26,7 +25,7 @@ final class UpdatePlugin extends AbilityBase {
 	}
 
 	public function description(): string {
-		return __( 'Updates one plugin, by plugin file (e.g. "akismet/akismet.php"), to the newest version WordPress knows about. Checks for updates first, so it needs WordPress.org (or the plugin\'s own update server) to be reachable; if not, the error says so. An active plugin is reactivated after the update. Returns the plugin file, name, previous_version, version and active state. Allowed on live sites (through HQ, a person approves it first). Cannot be undone: take a backup first on important sites. WPRoadie and the MCP Adapter cannot be updated from here.', 'wproadie' );
+		return __( 'Updates one plugin, by plugin file (e.g. "akismet/akismet.php"), to the newest version WordPress knows about. Checks for updates first, so it needs WordPress.org (or the plugin\'s own update server) to be reachable; if not, the error says so. An active plugin is reactivated after the update. Returns the plugin file, name, previous_version, version and active state. The previous version is backed up first; if the update leaves the site erroring, it is put back automatically (update_rolled_back). Returns an undo_id that restores the previous version. Allowed on live sites (through HQ, a person approves it first). For several updates at once, use apply-updates. WPRoadie and the MCP Adapter cannot be updated from here.', 'wproadie' );
 	}
 
 	public function group(): string {
@@ -128,38 +127,44 @@ final class UpdatePlugin extends AbilityBase {
 			);
 		}
 
-		$skin     = Installer::skin();
-		$upgrader = new Plugin_Upgrader( $skin );
-		$result   = Installer::quietly(
-			static function () use ( $upgrader, $file ) {
-				return $upgrader->upgrade( $file );
+		$run = SafeUpdate::run(
+			array(
+				array(
+					'kind' => SafeUpdate::KIND_PLUGIN,
+					'id'   => $file,
+					'name' => $before['name'],
+					'from' => $before['version'],
+					'to'   => (string) $updates->response[ $file ]->new_version,
+				),
+			),
+			true,
+			function ( array $record ) {
+				$this->add_undo( $record );
 			}
 		);
-		$outcome  = Installer::outcome( $result, $skin );
+		return $this->report( $run, Installer::plugin_summary( $file ), $before['version'] );
+	}
 
-		// The upgrader deactivates an active plugin while it swaps the
-		// files. Put it back, as wp-admin does, even if the update failed.
-		$reactivation = array();
-		if ( $before['active'] && ! is_plugin_active( $file ) && array_key_exists( $file, get_plugins() ) ) {
-			$reactivation = Installer::activate( $file, true );
-		}
-
-		if ( is_wp_error( $outcome ) ) {
-			return $outcome;
-		}
-
-		$summary                     = Installer::plugin_summary( $file );
-		$summary['previous_version'] = $before['version'];
-		$summary['log']              = Installer::log( $skin );
-		if ( is_wp_error( $reactivation ) ) {
-			$summary['warning'] = sprintf(
-				/* translators: %s: error message. */
-				__( 'Updated, but the plugin could not be reactivated. %s', 'wproadie' ),
-				$reactivation->get_error_message()
+	/**
+	 * One item's SafeUpdate result as this tool's output: the plugin's
+	 * summary plus previous_version, status, message, log and health.
+	 *
+	 * @return array|\WP_Error
+	 */
+	private function report( array $run, array $summary, string $previous ) {
+		$result = $run['results'][0];
+		if ( 'updated' !== $result['status'] ) {
+			return $this->error(
+				'rolled_back' === $result['status'] ? 'update_rolled_back' : 'update_failed',
+				$result['message'],
+				500
 			);
-		} elseif ( ! empty( $reactivation['warning'] ) ) {
-			$summary['warning'] = $reactivation['warning'];
 		}
+		$summary['previous_version'] = $previous;
+		$summary['status']           = $result['status'];
+		$summary['message']          = $result['message'];
+		$summary['log']              = $result['log'];
+		$summary['health']           = $run['health'];
 		return $summary;
 	}
 }
