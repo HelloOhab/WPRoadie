@@ -108,6 +108,7 @@ final class Connection {
 	}
 
 	public static function disconnect(): void {
+		Heartbeat::goodbye( 'disconnected' );
 		delete_option( self::OPTION );
 	}
 

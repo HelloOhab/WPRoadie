@@ -131,6 +131,7 @@ final class Plugin {
 
 	public static function deactivate(): void {
 		// Data is kept on deactivation; uninstall.php removes it.
+		HqHeartbeat::goodbye( 'deactivated' );
 		wp_clear_scheduled_hook( self::PRUNE_HOOK );
 		HqHeartbeat::unschedule();
 	}

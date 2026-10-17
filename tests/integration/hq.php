@@ -13,6 +13,7 @@ use WPRoadie\Hq\Heartbeat;
 use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Signer;
 use WPRoadie\Log\AuditLog;
+use WPRoadie\Plugin;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Server\Permission;
 
@@ -573,9 +574,56 @@ wproadie_test(
 );
 
 wproadie_test(
-	'teardown: disconnect from the test HQ',
+	'deactivating says goodbye to HQ at once',
 	function () {
-		Connection::disconnect();
+		$sent = array();
+		$fake = function ( $pre, $args ) use ( &$sent ) {
+			$sent[] = array(
+				'body'    => json_decode( $args['body'], true ),
+				'timeout' => $args['timeout'],
+			);
+			return array(
+				'headers'  => array(),
+				'body'     => '{"ok":true}',
+				'response' => array(
+					'code'    => 200,
+					'message' => '',
+				),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $fake, 10, 2 );
+		try {
+			Plugin::deactivate();
+			wproadie_assert_same( 1, count( $sent ) );
+			wproadie_assert_same( 'deactivated', $sent[0]['body']['event'] );
+			wproadie_assert_same( HQ_TEST_SITE, $sent[0]['body']['site_id'] );
+			wproadie_assert_same( 5, $sent[0]['timeout'] );
+			wproadie_assert( ! wp_next_scheduled( Heartbeat::CRON_HOOK ) );
+			wproadie_assert( Connection::is_connected() );
+		} finally {
+			remove_filter( 'pre_http_request', $fake, 10 );
+			Plugin::activate();
+		}
+	}
+);
+
+wproadie_test(
+	'teardown: disconnect from the test HQ (saying goodbye first)',
+	function () {
+		$event = null;
+		$fake  = function ( $pre, $args ) use ( &$event ) {
+			$event = json_decode( $args['body'], true )['event'] ?? null;
+			return new WP_Error( 'offline', 'HQ is unreachable' );
+		};
+		add_filter( 'pre_http_request', $fake, 10, 2 );
+		try {
+			Connection::disconnect();
+		} finally {
+			remove_filter( 'pre_http_request', $fake, 10 );
+		}
+		// An unreachable HQ does not stop the disconnect.
+		wproadie_assert_same( 'disconnected', $event );
 		Heartbeat::unschedule();
 		delete_option( Heartbeat::LAST_RESULT );
 		wproadie_assert( ! Connection::is_connected() );
