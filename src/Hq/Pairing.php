@@ -154,7 +154,12 @@ final class Pairing {
 		// Never the code, verifier or secret.
 		AuditLog::record(
 			'hq/pair',
-			array( 'hq_url' => is_wp_error( $result ) ? self::pending_url( $state ) : $result['hq_url'] ),
+			is_wp_error( $result )
+				? array(
+					'hq_url' => self::pending_url( $state ),
+					'reason' => (string) ( $result->get_error_data()['reason'] ?? '' ),
+				)
+				: array( 'hq_url' => $result['hq_url'] ),
 			$log,
 			(int) round( ( microtime( true ) - $started ) * 1000 )
 		);
@@ -177,9 +182,8 @@ final class Pairing {
 		if ( $blocked ) {
 			return $blocked;
 		}
-		$expired = new WP_Error( 'wproadie_pair_expired', __( 'This connection request has expired or was already used. Click "Connect to HQ" again.', 'wproadie' ), array( 'status' => 400 ) );
 		if ( ! preg_match( '/^[0-9a-f]{32}$/', $state ) ) {
-			return $expired;
+			return self::expired( 'bad_state' );
 		}
 		if ( ! preg_match( '/^[A-Za-z0-9_-]{43}$/', $code ) ) {
 			return new WP_Error( 'wproadie_pair_bad_code', __( 'HQ sent back a code this site does not understand. Click "Connect to HQ" again.', 'wproadie' ), array( 'status' => 400 ) );
@@ -187,9 +191,12 @@ final class Pairing {
 
 		$user_id = get_current_user_id();
 		$pending = self::pending( $state );
+		if ( ! $pending ) {
+			return self::expired( 'not_found' );
+		}
 		// Another administrator's request is left alone for them to finish.
-		if ( ! $pending || (int) ( $pending['user_id'] ?? 0 ) !== $user_id || ! $user_id ) {
-			return $expired;
+		if ( ! $user_id || (int) ( $pending['user_id'] ?? 0 ) !== $user_id ) {
+			return self::expired( 'other_user' );
 		}
 		self::forget( $state );
 
@@ -289,6 +296,37 @@ final class Pairing {
 		return array(
 			'config'    => $config,
 			'heartbeat' => Heartbeat::send(),
+		);
+	}
+
+	/**
+	 * Why a request could not be finished, in words a person can act on.
+	 * The reason is kept in the error data (and the activity log).
+	 *
+	 * @param string $reason bad_state | not_found | other_user.
+	 */
+	private static function expired( string $reason ): WP_Error {
+		switch ( $reason ) {
+			case 'other_user':
+				$message = __( 'This connection request was started by a different WordPress user. Sign in as that user, or click "Connect to HQ" again as yourself.', 'wproadie' );
+				break;
+			case 'not_found':
+				$message = sprintf(
+					/* translators: %d: minutes a request stays valid. */
+					__( 'This site has no record of that connection request: it was started more than %d minutes ago, was already used, or the site could not save it. Click "Connect to HQ" again; if it happens again, the site is not keeping saved options between page loads.', 'wproadie' ),
+					(int) ( self::LIFETIME / MINUTE_IN_SECONDS )
+				);
+				break;
+			default:
+				$message = __( 'HQ sent back a connection request this site does not recognise. Click "Connect to HQ" again.', 'wproadie' );
+		}
+		return new WP_Error(
+			'wproadie_pair_expired',
+			$message,
+			array(
+				'status' => 400,
+				'reason' => $reason,
+			)
 		);
 	}
 
