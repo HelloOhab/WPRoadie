@@ -149,7 +149,7 @@ Bodies are JSON (`Content-Type: application/json`). Responses are not signed: th
 
 **Goodbye (plugin 0.7.1+).** When WPRoadie is deactivated (which WordPress also does before deleting it), or disconnected from HQ, the site sends one last heartbeat with `"event": "deactivated"` or `"event": "disconnected"` (5-second timeout, best effort). HQ marks the site as off at once, stops forwarding AI calls to it, and clears the mark when the next ordinary heartbeat arrives. HQ ignores unknown `event` values.
 
-Any field may be `null` when unknown. `health` is recomputed at most every 6 hours (Site Health's checks are slow). `updates` uses WordPress's cached update data; the heartbeat never triggers an update check itself.
+Any field may be `null` when unknown. `health` is recomputed at most every 6 hours (Site Health's checks are slow). `updates` uses WordPress's cached update data; the heartbeat never triggers an update check itself. From plugin 0.7.5, it also includes updates that premium plugins only announce inside wp-admin: WPRoadie remembers what wp-admin last showed and keeps reporting it until the plugin or theme is updated (such entries drop out when a newer version is installed, or after 60 days without being announced again). A visit to wp-admin that changes the picture sends a heartbeat within a minute.
 
 HQ answers `200 {"ok":true}`. The `site.hq_endpoint` from the latest valid heartbeat is where HQ sends commands.
 

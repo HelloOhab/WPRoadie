@@ -168,7 +168,7 @@ wp wproadie hq connect 'wproadie-hq:v1:…'
 
 or paste it under **Tools → WPRoadie → Get set up → Use a connection string instead**. You can also define `WPROADIE_HQ_URL`, `WPROADIE_HQ_SITE_ID` and `WPROADIE_HQ_SECRET` in wp-config.php.
 
-**What the site sends:** a signed heartbeat every hour (and a minute after the mode, kill switch or tool switches change): versions, mode, who has access, pending updates, Site Health (refreshed every 6 hours) and the last 24 hours of AI activity.
+**What the site sends:** a signed heartbeat every hour (and a minute after the mode, kill switch or tool switches change): versions, mode, who has access, pending updates (including the ones premium plugins only announce inside wp-admin: WPRoadie remembers what wp-admin last showed until the update is installed), Site Health (refreshed every 6 hours) and the last 24 hours of AI activity.
 
 **What HQ can do on the site:** list access, list the tools the site exposes (so HQ can offer them to Claude as one connector), issue and revoke a person's WPRoadie Application Password, and revoke a person entirely when they leave. HQ can only issue passwords to administrators who already have WPRoadie access on that site, only over HTTPS, and never while the kill switch is on. Revocations still work with the kill switch on. Every HQ command appears in the activity log as `hq/…`, user "HQ"; passwords are never logged.
 
