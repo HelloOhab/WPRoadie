@@ -123,6 +123,11 @@ Bodies are JSON (`Content-Type: application/json`). Responses are not signed: th
     "tools_hash": "9f2c…",
     "users_with_access": ["abdul", "maria"]
   },
+  "stack": {
+    "theme": { "name": "Divi", "version": "5.12.1", "stylesheet": "Divi", "parent": null, "block_theme": false },
+    "builders": { "divi": "5.12.1", "elementor": null, "elementor_pro": null },
+    "plugins": [ { "file": "wproadie/wproadie.php", "name": "WPRoadie", "version": "0.7.0" } ]
+  },
   "updates": {
     "core": "6.9.1",
     "plugins": [ { "file": "akismet/akismet.php", "name": "Akismet", "version": "5.3", "new_version": "5.4" } ],
@@ -139,6 +144,8 @@ Bodies are JSON (`Content-Type: application/json`). Responses are not signed: th
   }
 }
 ```
+
+`stack` (plugin 0.7.0+) is what the site is built with: the active theme and its parent, page builders with their versions, and up to 200 active plugins. HQ uses it for the site briefing it gives AI clients.
 
 Any field may be `null` when unknown. `health` is recomputed at most every 6 hours (Site Health's checks are slow). `updates` uses WordPress's cached update data; the heartbeat never triggers an update check itself.
 

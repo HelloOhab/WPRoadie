@@ -172,9 +172,64 @@ final class Heartbeat {
 					)
 				),
 			),
+			'stack'    => self::stack(),
 			'updates'  => self::updates(),
 			'health'   => self::health(),
 			'activity' => AuditLog::activity_summary(),
+		);
+	}
+
+	/**
+	 * What the site is built with, for the site briefing HQ gives AI
+	 * clients: the theme (and parent), page builders with their versions,
+	 * and active plugins.
+	 */
+	public static function stack(): array {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$theme  = wp_get_theme();
+		$parent = $theme->parent();
+
+		$plugins = array();
+		foreach ( get_plugins() as $file => $data ) {
+			if ( ! is_plugin_active( $file ) ) {
+				continue;
+			}
+			$plugins[] = array(
+				'file'    => (string) $file,
+				'name'    => wp_strip_all_tags( (string) $data['Name'] ),
+				'version' => (string) $data['Version'],
+			);
+			if ( count( $plugins ) >= 200 ) {
+				break;
+			}
+		}
+
+		$divi = null;
+		foreach ( array( 'ET_BUILDER_PRODUCT_VERSION', 'ET_BUILDER_VERSION' ) as $constant ) {
+			if ( null === $divi && defined( $constant ) ) {
+				$divi = (string) constant( $constant );
+			}
+		}
+		if ( null === $divi && in_array( $theme->get_template(), array( 'Divi', 'Extra' ), true ) ) {
+			$divi = (string) ( $parent ? $parent->get( 'Version' ) : $theme->get( 'Version' ) );
+		}
+
+		return array(
+			'theme'    => array(
+				'name'        => wp_strip_all_tags( (string) $theme->get( 'Name' ) ),
+				'version'     => (string) $theme->get( 'Version' ),
+				'stylesheet'  => $theme->get_stylesheet(),
+				'parent'      => $parent ? wp_strip_all_tags( (string) $parent->get( 'Name' ) ) : null,
+				'block_theme' => function_exists( 'wp_is_block_theme' ) ? wp_is_block_theme() : false,
+			),
+			'builders' => array(
+				'divi'          => $divi,
+				'elementor'     => defined( 'ELEMENTOR_VERSION' ) ? (string) ELEMENTOR_VERSION : null,
+				'elementor_pro' => defined( 'ELEMENTOR_PRO_VERSION' ) ? (string) ELEMENTOR_PRO_VERSION : null,
+			),
+			'plugins'  => $plugins,
 		);
 	}
 
