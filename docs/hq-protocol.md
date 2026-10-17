@@ -147,6 +147,8 @@ Bodies are JSON (`Content-Type: application/json`). Responses are not signed: th
 
 `stack` (plugin 0.7.0+) is what the site is built with: the active theme and its parent, page builders with their versions, and up to 200 active plugins. HQ uses it for the site briefing it gives AI clients.
 
+**Goodbye (plugin 0.7.1+).** When WPRoadie is deactivated (which WordPress also does before deleting it), or disconnected from HQ, the site sends one last heartbeat with `"event": "deactivated"` or `"event": "disconnected"` (5-second timeout, best effort). HQ marks the site as off at once, stops forwarding AI calls to it, and clears the mark when the next ordinary heartbeat arrives. HQ ignores unknown `event` values.
+
 Any field may be `null` when unknown. `health` is recomputed at most every 6 hours (Site Health's checks are slow). `updates` uses WordPress's cached update data; the heartbeat never triggers an update check itself.
 
 HQ answers `200 {"ok":true}`. The `site.hq_endpoint` from the latest valid heartbeat is where HQ sends commands.

@@ -58,22 +58,42 @@ final class Heartbeat {
 	}
 
 	/**
+	 * Tells HQ right away that WPRoadie is going away (`deactivated`) or
+	 * leaving HQ (`disconnected`), so HQ stops offering the site instead of
+	 * waiting for heartbeats to stop. Best effort: a short timeout, and
+	 * failures are ignored.
+	 *
+	 * @param string $event `deactivated` or `disconnected`.
+	 */
+	public static function goodbye( string $event ): void {
+		if ( Connection::is_connected() ) {
+			self::send( $event, 5 );
+		}
+	}
+
+	/**
 	 * Sends a heartbeat now.
 	 *
+	 * @param string|null $event   Optional goodbye event (see goodbye()).
+	 * @param int         $timeout Request timeout in seconds.
 	 * @return true|WP_Error
 	 */
-	public static function send() {
+	public static function send( ?string $event = null, int $timeout = 15 ) {
 		$config = Connection::get();
 		$key    = Connection::key();
 		if ( ! $config || null === $key ) {
 			return new WP_Error( 'wproadie_hq_not_connected', __( 'This site is not connected to HQ.', 'wproadie' ) );
 		}
 
-		$body     = (string) wp_json_encode( self::payload() );
+		$payload = self::payload();
+		if ( null !== $event ) {
+			$payload = array( 'event' => $event ) + $payload;
+		}
+		$body     = (string) wp_json_encode( $payload );
 		$response = wp_remote_post(
 			$config['url'] . '/api/v1/heartbeat',
 			array(
-				'timeout'     => 15,
+				'timeout'     => $timeout,
 				'redirection' => 0,
 				'headers'     => Signer::headers( $key, 'heartbeat', $config['site_id'], $body ),
 				'body'        => $body,
