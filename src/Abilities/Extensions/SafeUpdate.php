@@ -262,12 +262,14 @@ final class SafeUpdate {
 			'log'     => array(),
 		);
 
+		self::trace( 'backup ' . $item['id'] );
 		$record = self::backup( $item['kind'], $item['id'] );
 		if ( is_wp_error( $record ) ) {
 			$out['message'] = $record->get_error_message();
 			return $out;
 		}
 
+		self::trace( 'upgrade ' . $item['id'] );
 		$skin       = Installer::skin();
 		$upgrader   = self::KIND_PLUGIN === $item['kind'] ? new Plugin_Upgrader( $skin ) : new Theme_Upgrader( $skin );
 		$id         = $item['id'];
@@ -299,6 +301,7 @@ final class SafeUpdate {
 			return $out;
 		}
 
+		self::trace( 'verify ' . $item['id'] );
 		$problem = self::verify( $item, $probe );
 		if ( null === $problem && null !== $reactivation ) {
 			$problem = $reactivation;
@@ -462,6 +465,13 @@ final class SafeUpdate {
 			return Installer::filesystem_error();
 		}
 		return $wp_filesystem;
+	}
+
+	/** Debug breadcrumbs, only when WPROADIE_TEST_TRACE names a file (tests). */
+	private static function trace( string $message ): void {
+		if ( getenv( 'WPROADIE_TEST_TRACE' ) ) {
+			error_log( '[SafeUpdate] ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
 	}
 
 	private static function remove_dir( string $dir ): void {

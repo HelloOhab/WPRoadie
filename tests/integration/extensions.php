@@ -326,6 +326,7 @@ wproadie_test(
 			wproadie_assert_same( 'not_installed', $plan['skipped'][0]['reason'] );
 			wproadie_assert_same( '1.0.0', get_plugins()[ $file ]['Version'], 'a dry run changes nothing' );
 
+			wproadie_trace( 'apply-updates: good update' );
 			$result = wproadie_ok( wproadie_call( 'apply-updates', array( 'plugins' => array( $file ) ) ) );
 			wproadie_assert_same( 1, $result['updated'], wp_json_encode( $result ) );
 			wproadie_assert_same( 'updated', $result['results'][0]['status'] );
@@ -344,6 +345,7 @@ wproadie_test(
 			// A release whose main file does not parse is rolled back before it can take the site down.
 			$serve = $broken;
 			$offer( '1.2.0' );
+			wproadie_trace( 'apply-updates: broken update' );
 			$rolled = wproadie_ok( wproadie_call( 'apply-updates', array( 'all' => true ) ) );
 			$item   = null;
 			foreach ( $rolled['results'] as $r ) {
@@ -362,6 +364,7 @@ wproadie_test(
 			// update-plugin takes the same safe path.
 			$serve = $good;
 			$offer( '1.1.0' );
+			wproadie_trace( 'apply-updates: update-plugin' );
 			$single = wproadie_ok( wproadie_call( 'update-plugin', array( 'plugin' => $file ) ) );
 			wproadie_assert_same( '1.1.0', $single['version'] );
 			wproadie_assert_same( '1.0.0', $single['previous_version'] );
