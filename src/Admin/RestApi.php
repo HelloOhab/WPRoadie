@@ -260,8 +260,17 @@ final class RestApi {
 				'available' => $ability->is_available(),
 				'reason'    => $ability->unavailable_reason(),
 				'exposed'   => in_array( $ability->name(), $enabled, true ),
+				'allowed'   => Mode::allows( $ability->risk() ),
 			);
 		}
+		// A group whose tools span risk levels (e.g. updates allowed on a live
+		// site, installs not) is partly allowed: say so instead of "blocked".
+		foreach ( $groups as &$group ) {
+			$allowed          = count( array_filter( array_column( $group['abilities'], 'allowed' ) ) );
+			$group['allowed'] = $group['abilities'] ? $allowed > 0 : Mode::allows( $group['risk'] );
+			$group['partly']  = $allowed > 0 && $allowed < count( $group['abilities'] );
+		}
+		unset( $group );
 
 		$user_id = get_current_user_id();
 

@@ -42,6 +42,8 @@ wproadie_test(
 		wproadie_assert( Mode::allows( Mode::RISK_DANGEROUS, Mode::STAGING ) );
 		wproadie_assert( Mode::allows( Mode::RISK_WRITE, Mode::PRODUCTION ) );
 		wproadie_assert( ! Mode::allows( Mode::RISK_ADMIN, Mode::PRODUCTION ) );
+		wproadie_assert( Mode::allows( Mode::RISK_MAINTAIN, Mode::PRODUCTION ), 'Live sites take plugin and theme updates.' );
+		wproadie_assert( ! Mode::allows( Mode::RISK_MAINTAIN, Mode::READ_ONLY ) );
 		wproadie_assert( ! Mode::allows( Mode::RISK_WRITE, Mode::READ_ONLY ) );
 		wproadie_assert( Mode::allows( Mode::RISK_READ, Mode::READ_ONLY ) );
 	}

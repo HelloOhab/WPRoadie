@@ -12,9 +12,20 @@ import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { errorMessage } from '../api';
 
+/** What the current mode makes of a group: all of its tools, some (e.g. updates but not installs on a live site), or none. */
+const allowanceLabel = ( group ) => {
+	if ( group.partly ) {
+		return __( 'Partly', 'wproadie' );
+	}
+	return group.allowed
+		? __( 'Allowed', 'wproadie' )
+		: __( 'Blocked', 'wproadie' );
+};
+
 const RISK_LABELS = {
 	read: __( 'Read', 'wproadie' ),
 	write: __( 'Write', 'wproadie' ),
+	maintain: __( 'Maintain', 'wproadie' ),
 	admin: __( 'Admin', 'wproadie' ),
 	dangerous: __( 'Dangerous', 'wproadie' ),
 };
@@ -122,11 +133,7 @@ export default function Tools( { status, saveSettings } ) {
 											{ RISK_LABELS[ group.risk ] }
 										</span>
 									</td>
-									<td>
-										{ group.allowed
-											? __( 'Allowed', 'wproadie' )
-											: __( 'Blocked', 'wproadie' ) }
-									</td>
+									<td>{ allowanceLabel( group ) }</td>
 									<td>
 										{ group.abilities.length === 0 &&
 											__( '(none yet)', 'wproadie' ) }

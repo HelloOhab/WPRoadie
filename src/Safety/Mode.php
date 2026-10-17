@@ -17,18 +17,26 @@ final class Mode {
 
 	/**
 	 * Risk levels an ability can declare, from least to most dangerous.
+	 * `maintain` is keeping what is already installed up to date: plugin
+	 * and theme updates to versions WordPress offers. That is routine care,
+	 * so live sites allow it (HQ queues it for a person's approval there);
+	 * installs, removals and anything that runs arbitrary code stay
+	 * `admin` or `dangerous`.
 	 */
 	const RISK_READ      = 'read';
 	const RISK_WRITE     = 'write';
+	const RISK_MAINTAIN  = 'maintain';
 	const RISK_ADMIN     = 'admin';
 	const RISK_DANGEROUS = 'dangerous';
+
+	const RISKS = array( self::RISK_READ, self::RISK_WRITE, self::RISK_MAINTAIN, self::RISK_ADMIN, self::RISK_DANGEROUS );
 
 	/**
 	 * Which risk levels each mode allows.
 	 */
 	const ALLOWED_RISKS = array(
-		self::STAGING    => array( self::RISK_READ, self::RISK_WRITE, self::RISK_ADMIN, self::RISK_DANGEROUS ),
-		self::PRODUCTION => array( self::RISK_READ, self::RISK_WRITE ),
+		self::STAGING    => array( self::RISK_READ, self::RISK_WRITE, self::RISK_MAINTAIN, self::RISK_ADMIN, self::RISK_DANGEROUS ),
+		self::PRODUCTION => array( self::RISK_READ, self::RISK_WRITE, self::RISK_MAINTAIN ),
 		self::READ_ONLY  => array( self::RISK_READ ),
 	);
 
