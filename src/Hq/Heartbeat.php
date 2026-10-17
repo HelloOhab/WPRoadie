@@ -67,7 +67,7 @@ final class Heartbeat {
 	 * @param string $event `deactivated` or `disconnected`.
 	 */
 	public static function goodbye( string $event ): void {
-		if ( Connection::is_connected() ) {
+		if ( Connection::is_connected() && ! Connection::moved() ) {
 			self::send( $event, 5 );
 		}
 	}
@@ -84,6 +84,29 @@ final class Heartbeat {
 		$key    = Connection::key();
 		if ( ! $config || null === $key ) {
 			return new WP_Error( 'wproadie_hq_not_connected', __( 'This site is not connected to HQ.', 'wproadie' ) );
+		}
+
+		$moved = Connection::moved();
+		if ( $moved ) {
+			$result = new WP_Error(
+				'wproadie_hq_site_moved',
+				sprintf(
+					/* translators: 1: address the connection was made on, 2: this site's address. */
+					__( 'This WordPress is at %2$s, but its HQ connection was made at %1$s. It looks like a copy (for example a staging site refreshed from live), so it is not reporting to HQ. Open Tools → WPRoadie to connect it as its own site, or to keep the connection if the site really moved.', 'wproadie' ),
+					$moved['from'],
+					$moved['to']
+				)
+			);
+			update_option(
+				self::LAST_RESULT,
+				array(
+					'at'    => time(),
+					'ok'    => false,
+					'error' => $result->get_error_message(),
+				),
+				false
+			);
+			return $result;
 		}
 
 		$payload = self::payload();
@@ -116,6 +139,8 @@ final class Heartbeat {
 			);
 		} else {
 			$result = true;
+			// A connection made before 0.9.1 has no address on record yet.
+			Connection::adopt_home_if_missing();
 		}
 
 		update_option(
@@ -263,16 +288,7 @@ final class Heartbeat {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$core      = null;
-		$core_data = get_site_transient( 'update_core' );
-		if ( is_object( $core_data ) && ! empty( $core_data->updates ) ) {
-			foreach ( $core_data->updates as $offer ) {
-				if ( isset( $offer->response ) && 'upgrade' === $offer->response ) {
-					$core = (string) $offer->current;
-					break;
-				}
-			}
-		}
+		$core = self::core_update();
 
 		$plugins   = array();
 		$installed = get_plugins();
@@ -307,6 +323,40 @@ final class Heartbeat {
 			'plugins' => $plugins,
 			'themes'  => $themes,
 		);
+	}
+
+	/**
+	 * The newest WordPress version on offer, or null when up to date. Reads
+	 * WordPress's own check; when that is missing or over 12 hours old (a
+	 * host without working cron, a fresh copy of a site) it runs the check
+	 * once, as the Dashboard → Updates screen would.
+	 */
+	public static function core_update(): ?string {
+		$data = get_site_transient( 'update_core' );
+		if ( ! is_object( $data ) || empty( $data->updates ) || time() - (int) ( $data->last_checked ?? 0 ) > 12 * HOUR_IN_SECONDS ) {
+			if ( ! function_exists( 'wp_version_check' ) ) {
+				require_once ABSPATH . 'wp-includes/update.php';
+			}
+			wp_version_check();
+			$data = get_site_transient( 'update_core' );
+		}
+		if ( ! is_object( $data ) || empty( $data->updates ) ) {
+			return null;
+		}
+		$installed = get_bloginfo( 'version' );
+		$newest    = null;
+		foreach ( (array) $data->updates as $offer ) {
+			// `upgrade` offers are what the Updates screen shows; `latest` and
+			// `development` describe the installed branch and are skipped.
+			if ( ! isset( $offer->response, $offer->current ) || 'upgrade' !== $offer->response ) {
+				continue;
+			}
+			$version = (string) $offer->current;
+			if ( version_compare( $version, $installed, '>' ) && ( null === $newest || version_compare( $version, $newest, '>' ) ) ) {
+				$newest = $version;
+			}
+		}
+		return $newest;
 	}
 
 	/**

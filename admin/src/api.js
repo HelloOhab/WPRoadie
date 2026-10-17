@@ -27,6 +27,12 @@ export const api = {
 			method: 'POST',
 			data: { code, state },
 		} ),
+	hqMoved: ( keep ) =>
+		apiFetch( {
+			path: `${ BASE }/hq/moved`,
+			method: 'POST',
+			data: { keep },
+		} ),
 	saveSettings: ( data ) =>
 		apiFetch( { path: `${ BASE }/settings`, method: 'POST', data } ),
 	credentials: () => apiFetch( { path: `${ BASE }/credentials` } ),
