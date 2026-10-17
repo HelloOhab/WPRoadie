@@ -11,6 +11,7 @@ use Plugin_Upgrader;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Safety\Guardrails;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\PendingUpdates;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -74,6 +75,20 @@ final class UpdatePlugin extends AbilityBase {
 	}
 
 	protected function execute( array $input ) {
+		return PendingUpdates::with_remembered(
+			function () use ( $input ) {
+				return $this->run( $input );
+			}
+		);
+	}
+
+	/**
+	 * The update itself, with remembered premium updates visible to WordPress.
+	 *
+	 * @param array $input Validated input.
+	 * @return array|\WP_Error
+	 */
+	private function run( array $input ) {
 		Installer::load();
 		$file = (string) $input['plugin'];
 		if ( Guardrails::is_protected_plugin( $file ) ) {

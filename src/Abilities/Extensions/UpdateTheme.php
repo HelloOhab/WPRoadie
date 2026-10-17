@@ -10,6 +10,7 @@ namespace WPRoadie\Abilities\Extensions;
 use Theme_Upgrader;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\PendingUpdates;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -73,6 +74,20 @@ final class UpdateTheme extends AbilityBase {
 	}
 
 	protected function execute( array $input ) {
+		return PendingUpdates::with_remembered(
+			function () use ( $input ) {
+				return $this->run( $input );
+			}
+		);
+	}
+
+	/**
+	 * The update itself, with remembered premium updates visible to WordPress.
+	 *
+	 * @param array $input Validated input.
+	 * @return array|\WP_Error
+	 */
+	private function run( array $input ) {
 		Installer::load();
 		$stylesheet = (string) $input['stylesheet'];
 		if ( ! wp_get_theme( $stylesheet )->exists() ) {

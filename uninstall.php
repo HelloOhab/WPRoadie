@@ -35,6 +35,7 @@ delete_option( 'wproadie_hq' );
 delete_option( 'wproadie_hq_last_heartbeat' );
 delete_option( 'wproadie_hq_last_url' );
 delete_option( 'wproadie_hq_pairs' );
+delete_option( 'wproadie_updates_seen' );
 delete_metadata( 'user', 0, 'wproadie_hq_email', '', true );
 delete_transient( 'wproadie_hq_health' );
 delete_site_transient( 'wproadie_update_release' );

@@ -12,6 +12,7 @@ use WPRoadie\Abilities\Registry;
 use WPRoadie\Abilities\Site\HealthCheck;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\PendingUpdates;
 use WPRoadie\Safety\RateLimit;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Server\McpServer;
@@ -254,7 +255,8 @@ final class Heartbeat {
 	}
 
 	/**
-	 * Pending updates from WordPress's cached update checks.
+	 * Pending updates: WordPress's cached update checks, plus the updates
+	 * premium plugins only announce in wp-admin (see PendingUpdates).
 	 */
 	private static function updates(): array {
 		if ( ! function_exists( 'get_plugins' ) ) {
@@ -272,38 +274,32 @@ final class Heartbeat {
 			}
 		}
 
-		$plugins     = array();
-		$plugin_data = get_site_transient( 'update_plugins' );
-		$installed   = get_plugins();
-		if ( is_object( $plugin_data ) && ! empty( $plugin_data->response ) ) {
-			foreach ( (array) $plugin_data->response as $file => $offer ) {
-				if ( ! isset( $installed[ $file ] ) ) {
-					continue;
-				}
-				$plugins[] = array(
-					'file'        => (string) $file,
-					'name'        => (string) $installed[ $file ]['Name'],
-					'version'     => (string) $installed[ $file ]['Version'],
-					'new_version' => isset( $offer->new_version ) ? (string) $offer->new_version : null,
-				);
+		$plugins   = array();
+		$installed = get_plugins();
+		foreach ( PendingUpdates::plugins() as $file => $offer ) {
+			if ( ! isset( $installed[ $file ] ) ) {
+				continue;
 			}
+			$plugins[] = array(
+				'file'        => (string) $file,
+				'name'        => (string) $installed[ $file ]['Name'],
+				'version'     => (string) $installed[ $file ]['Version'],
+				'new_version' => isset( $offer->new_version ) ? (string) $offer->new_version : null,
+			);
 		}
 
-		$themes     = array();
-		$theme_data = get_site_transient( 'update_themes' );
-		if ( is_object( $theme_data ) && ! empty( $theme_data->response ) ) {
-			foreach ( (array) $theme_data->response as $stylesheet => $offer ) {
-				$theme = wp_get_theme( $stylesheet );
-				if ( ! $theme->exists() ) {
-					continue;
-				}
-				$themes[] = array(
-					'stylesheet'  => (string) $stylesheet,
-					'name'        => (string) $theme->get( 'Name' ),
-					'version'     => (string) $theme->get( 'Version' ),
-					'new_version' => isset( $offer['new_version'] ) ? (string) $offer['new_version'] : null,
-				);
+		$themes = array();
+		foreach ( PendingUpdates::themes() as $stylesheet => $offer ) {
+			$theme = wp_get_theme( $stylesheet );
+			if ( ! $theme->exists() ) {
+				continue;
 			}
+			$themes[] = array(
+				'stylesheet'  => (string) $stylesheet,
+				'name'        => (string) $theme->get( 'Name' ),
+				'version'     => (string) $theme->get( 'Version' ),
+				'new_version' => isset( $offer['new_version'] ) ? (string) $offer['new_version'] : null,
+			);
 		}
 
 		return array(

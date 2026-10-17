@@ -17,6 +17,7 @@ use WPRoadie\Hq\Commands as HqCommands;
 use WPRoadie\Hq\Heartbeat as HqHeartbeat;
 use WPRoadie\Hq\HqCliCommand;
 use WPRoadie\Log\AuditLog;
+use WPRoadie\Safety\PendingUpdates;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Safety\Stealth;
 use WPRoadie\Server\McpServer;
@@ -71,6 +72,7 @@ final class Plugin {
 		( new RestApi() )->hooks();
 		( new Updater() )->hooks();
 		( new Stealth() )->hooks();
+		( new PendingUpdates() )->hooks();
 		// HQ keeps working with the kill switch on: it reports the switch,
 		// and its commands can still take access away (never grant it).
 		( new HqHeartbeat() )->hooks();

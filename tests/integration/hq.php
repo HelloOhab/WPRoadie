@@ -14,6 +14,7 @@ use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Signer;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Plugin;
+use WPRoadie\Safety\PendingUpdates;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Server\Permission;
 
@@ -248,6 +249,94 @@ wproadie_test(
 		wproadie_assert( in_array( plugin_basename( WPROADIE_FILE ), $files, true ), wp_json_encode( $files ) );
 		foreach ( $result['stack']['plugins'] as $plugin ) {
 			wproadie_assert( is_plugin_active( $plugin['file'] ), $plugin['file'] . ' is listed but not active' );
+		}
+	}
+);
+
+wproadie_test(
+	'updates premium plugins only announce in wp-admin stay reported until they are installed',
+	function () {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$file  = 'hello.php';
+		$theme = wp_get_theme()->get_stylesheet();
+		wproadie_assert( isset( get_plugins()[ $file ] ), 'Hello Dolly is not installed on the test site' );
+		$plugin_offer = (object) array(
+			'plugin'      => $file,
+			'slug'        => 'hello-dolly',
+			'new_version' => '99.0.0',
+			'package'     => 'https://updates.example.test/hello-dolly-99.zip',
+		);
+		$theme_offer  = array(
+			'theme'       => $theme,
+			'new_version' => '99.0.0',
+			'package'     => 'https://updates.example.test/theme-99.zip',
+		);
+		$empty        = static function () {
+			return (object) array(
+				'last_checked' => time(),
+				'response'     => array(),
+				'no_update'    => array(),
+			);
+		};
+		$pending      = static function ( string $kind, string $id ) {
+			foreach ( Heartbeat::payload()['updates'][ $kind ] as $entry ) {
+				if ( in_array( $id, $entry, true ) ) {
+					return $entry['new_version'];
+				}
+			}
+			return null;
+		};
+
+		PendingUpdates::forget();
+		wp_clear_scheduled_hook( Heartbeat::SOON_HOOK );
+		try {
+			// A wp-admin visit, with the premium updaters loaded, announces updates.
+			$announced           = $empty();
+			$announced->response = array( $file => $plugin_offer );
+			set_site_transient( 'update_plugins', $announced );
+			$announced           = $empty();
+			$announced->response = array( $theme => $theme_offer );
+			set_site_transient( 'update_themes', $announced );
+			wproadie_assert( wp_next_scheduled( Heartbeat::SOON_HOOK ), 'a changed picture should send a heartbeat soon' );
+
+			// Cron rebuilds the transients without them, as it does on real sites.
+			set_site_transient( 'update_plugins', $empty() );
+			set_site_transient( 'update_themes', $empty() );
+			wproadie_assert( empty( get_site_transient( 'update_plugins' )->response ) );
+
+			wproadie_assert_same( '99.0.0', $pending( 'plugins', $file ) );
+			wproadie_assert_same( '99.0.0', $pending( 'themes', $theme ) );
+			$listed = wproadie_call( 'list-plugins', array( 'status' => 'update_available' ) );
+			wproadie_assert_same( array( $file ), array_column( $listed['plugins'], 'file' ) );
+			wproadie_assert_same( '99.0.0', $listed['plugins'][0]['update_available'] );
+
+			// WordPress's upgrader sees the remembered package only while WPRoadie updates.
+			wproadie_assert( empty( get_site_transient( 'update_plugins' )->response[ $file ] ) );
+			$seen = PendingUpdates::with_remembered(
+				static function () use ( $file, $theme ) {
+					return array(
+						get_site_transient( 'update_plugins' )->response[ $file ]->package ?? null,
+						get_site_transient( 'update_themes' )->response[ $theme ]['package'] ?? null,
+					);
+				}
+			);
+			wproadie_assert_same( array( $plugin_offer->package, $theme_offer['package'] ), $seen );
+			wproadie_assert( empty( get_site_transient( 'update_plugins' )->response[ $file ] ) );
+
+			// Once the installed version has caught up, the update is forgotten.
+			$caught_up           = $empty();
+			$caught_up->response = array( $file => (object) array( 'new_version' => get_plugins()[ $file ]['Version'] ) );
+			set_site_transient( 'update_plugins', $caught_up );
+			set_site_transient( 'update_plugins', $empty() );
+			wproadie_assert_same( null, $pending( 'plugins', $file ) );
+			wproadie_assert_same( '99.0.0', $pending( 'themes', $theme ) );
+		} finally {
+			PendingUpdates::forget();
+			delete_site_transient( 'update_plugins' );
+			delete_site_transient( 'update_themes' );
+			wp_clear_scheduled_hook( Heartbeat::SOON_HOOK );
 		}
 	}
 );

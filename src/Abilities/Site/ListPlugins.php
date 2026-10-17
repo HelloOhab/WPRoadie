@@ -9,6 +9,7 @@ namespace WPRoadie\Abilities\Site;
 
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\PendingUpdates;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -23,7 +24,7 @@ final class ListPlugins extends AbilityBase {
 	}
 
 	public function description(): string {
-		return __( 'Lists installed plugins with their file, name, version, author, whether they are active, and the newer version available if WordPress knows of an update. Includes must-use plugins. Read-only: it does not check for new updates itself.', 'wproadie' );
+		return __( 'Lists installed plugins with their file, name, version, author, whether they are active, and the newer version available if WordPress knows of an update (including updates premium plugins have announced in wp-admin). Includes must-use plugins. Read-only: it does not check for new updates itself.', 'wproadie' );
 	}
 
 	public function group(): string {
@@ -57,7 +58,7 @@ final class ListPlugins extends AbilityBase {
 
 		$filter  = $input['status'] ?? 'all';
 		$updates = get_site_transient( 'update_plugins' );
-		$pending = ( is_object( $updates ) && isset( $updates->response ) ) ? (array) $updates->response : array();
+		$pending = PendingUpdates::plugins();
 
 		$plugins = array();
 		foreach ( get_plugins() as $file => $data ) {
