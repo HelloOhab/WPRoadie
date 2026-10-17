@@ -32,7 +32,7 @@ WPRoadie is built on WordPress's official AI building blocks: the **Abilities AP
 | Elementor | `elementor-list-pages`, `elementor-get-page`, `elementor-get-element`, `elementor-update-element`, `elementor-add-element`, `elementor-remove-element`, `elementor-move-element`, `elementor-duplicate-element`, `elementor-replace-text`, `elementor-list-templates`, `elementor-insert-template`, `elementor-get-kit`, `elementor-update-kit` (admin), `elementor-regenerate-css` | write | on (only while Elementor is active) |
 | Divi | `divi-list-pages`, `divi-get-page`, `divi-get-module`, `divi-update-module`, `divi-add-module`, `divi-remove-module`, `divi-move-module`, `divi-duplicate-module`, `divi-replace-text`, `divi-list-layouts`, `divi-insert-layout`, `divi-list-theme-builder`, `divi-clear-cache` | write | on (only while Divi is active) |
 | Settings | `get-options`, `update-options` (allow-listed options only) | write | on |
-| Plugins & themes | `install-plugin`, `activate-plugin`, `deactivate-plugin`, `update-plugin`, `install-theme`, `activate-theme`, `update-theme` | admin | on |
+| Plugins & themes | `install-plugin`, `activate-plugin`, `deactivate-plugin`, `install-theme`, `activate-theme` (admin); `update-plugin`, `update-theme`, `apply-updates` (maintain: allowed on live sites; backed up, health-checked, rolled back on failure, undoable) | admin / maintain | on |
 | Users | `list-users`, `create-user`, `change-user-role` | admin | **off** |
 | Files | `list-files`, `read-file`, `write-file`, `delete-file` | dangerous | on |
 | Database (read) | `list-tables`, `run-query` | dangerous | on |
@@ -152,7 +152,7 @@ Changes made through WPRoadie record how to reverse them. The AI can call `undo-
 
 Covered: posts and pages (a WordPress revision is also saved), creating and trashing posts, post meta, terms, menus and widgets, options, theme mods, files (backed up to `wp-content/wproadie/backups`), user roles and creation, plugin activation and theme switches.
 
-Not covered: raw SQL writes, PHP snippets, and plugin or theme installs and updates. Their tool descriptions say so. The AI may only undo a change if the current mode allows the original tool; a person can undo from the admin screen in any mode.
+Not covered: raw SQL writes, PHP snippets, and plugin or theme installs. Their tool descriptions say so. Plugin and theme updates are covered: the previous version is kept in `wp-content/wproadie/backups`, an update that leaves the site erroring is rolled back on the spot, and `undo-change` restores the previous version later. The AI may only undo a change if the current mode allows the original tool; a person can undo from the admin screen in any mode.
 
 ## WPRoadie HQ
 

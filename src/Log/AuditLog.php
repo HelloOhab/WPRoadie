@@ -244,6 +244,7 @@ final class AuditLog {
 				wp_delete_file( $file );
 			}
 		}
+		\WPRoadie\Abilities\Extensions\SafeUpdate::prune( $days );
 	}
 
 	/**

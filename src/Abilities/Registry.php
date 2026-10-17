@@ -106,6 +106,7 @@ final class Registry {
 		Extensions\InstallTheme::class,
 		Extensions\ActivateTheme::class,
 		Extensions\UpdateTheme::class,
+		Extensions\ApplyUpdates::class,
 
 		// Users (admin).
 		Users\ListUsers::class,
