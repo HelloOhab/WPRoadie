@@ -20,6 +20,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 $GLOBALS['wproadie_tests'] = array();
 
+// A fatal error inside a test is otherwise silent when it happens while
+// output is buffered (the upgrader runs that way): say what and where.
+register_shutdown_function(
+	static function () {
+		$error = error_get_last();
+		if ( $error && in_array( $error['type'], array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR ), true ) ) {
+			fwrite( STDERR, sprintf( "\nFATAL: %s in %s:%d\n", $error['message'], $error['file'], $error['line'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+		}
+	}
+);
+
 /**
  * Registers a test.
  *
