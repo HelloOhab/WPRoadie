@@ -114,14 +114,21 @@ final class SafeUpdate {
 
 		$results = array();
 		$stopped = false;
-		foreach ( $items as $item ) {
-			$result    = self::update_one( $item, $usable, $add_undo );
-			$results[] = $result;
-			if ( $stop_on_failure && in_array( $result['status'], array( 'failed', 'rolled_back' ), true ) ) {
-				$stopped = true;
-				break;
+		// WordPress's upgrader reads the update transient itself. Outside
+		// wp-admin that lacks the offers premium updaters only inject there,
+		// so merge in what wp-admin last showed (see PendingUpdates).
+		PendingUpdates::with_remembered(
+			static function () use ( $items, $usable, $add_undo, $stop_on_failure, &$results, &$stopped ) {
+				foreach ( $items as $item ) {
+					$result    = self::update_one( $item, $usable, $add_undo );
+					$results[] = $result;
+					if ( $stop_on_failure && in_array( $result['status'], array( 'failed', 'rolled_back' ), true ) ) {
+						$stopped = true;
+						break;
+					}
+				}
 			}
-		}
+		);
 		return array(
 			'results' => $results,
 			'health'  => array(

@@ -292,6 +292,10 @@ wproadie_test(
 				),
 			);
 			set_site_transient( 'update_plugins', $current );
+			// As on real sites: cron rebuilds the transient without the premium
+			// updater's offer, and WPRoadie must still remember it.
+			$current->response = array();
+			set_site_transient( 'update_plugins', $current );
 		};
 
 		try {
