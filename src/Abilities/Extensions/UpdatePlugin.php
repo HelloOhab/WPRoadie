@@ -26,7 +26,7 @@ final class UpdatePlugin extends AbilityBase {
 	}
 
 	public function description(): string {
-		return __( 'Updates one plugin, by plugin file (e.g. "akismet/akismet.php"), to the newest version WordPress knows about. Checks for updates first, so it needs WordPress.org (or the plugin\'s own update server) to be reachable; if not, the error says so. An active plugin is reactivated after the update. Returns the plugin file, name, previous_version, version and active state. Cannot be undone: take a backup first on important sites. WPRoadie and the MCP Adapter cannot be updated from here.', 'wproadie' );
+		return __( 'Updates one plugin, by plugin file (e.g. "akismet/akismet.php"), to the newest version WordPress knows about. Checks for updates first, so it needs WordPress.org (or the plugin\'s own update server) to be reachable; if not, the error says so. An active plugin is reactivated after the update. Returns the plugin file, name, previous_version, version and active state. Allowed on live sites (through HQ, a person approves it first). Cannot be undone: take a backup first on important sites. WPRoadie and the MCP Adapter cannot be updated from here.', 'wproadie' );
 	}
 
 	public function group(): string {
@@ -34,7 +34,7 @@ final class UpdatePlugin extends AbilityBase {
 	}
 
 	public function risk(): string {
-		return Mode::RISK_ADMIN;
+		return Mode::RISK_MAINTAIN;
 	}
 
 	public function is_available(): bool {

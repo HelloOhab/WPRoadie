@@ -33,7 +33,7 @@ final class UpdateTheme extends AbilityBase {
 	}
 
 	public function risk(): string {
-		return Mode::RISK_ADMIN;
+		return Mode::RISK_MAINTAIN;
 	}
 
 	public function is_available(): bool {

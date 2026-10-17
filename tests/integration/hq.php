@@ -14,6 +14,7 @@ use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Signer;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Plugin;
+use WPRoadie\Safety\Mode;
 use WPRoadie\Safety\PendingUpdates;
 use WPRoadie\Safety\Settings;
 use WPRoadie\Server\Permission;
@@ -626,7 +627,7 @@ wproadie_test(
 			$schema = $mcp->inputSchema; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- MCP field name.
 			wproadie_assert_same( hq_test_json( $schema ), hq_test_json( $tool['inputSchema'] ), "{$name} inputSchema" );
 			wproadie_assert_same( hq_test_json( $mcp->annotations ?? new stdClass() ), hq_test_json( $tool['annotations'] ), "{$name} annotations" );
-			wproadie_assert( in_array( $tool['risk'], array( 'read', 'write', 'admin', 'dangerous' ), true ), "{$name} risk" );
+			wproadie_assert( in_array( $tool['risk'], Mode::RISKS, true ), "{$name} risk" );
 		}
 
 		$log = AuditLog::query( array( 'ability' => 'hq/list_tools' ), 1 )['rows'][0];

@@ -13,7 +13,10 @@
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- Test file.
 
 use WPRoadie\Abilities\Extensions\Installer;
+use WPRoadie\Abilities\Registry;
 use WPRoadie\Log\Undo;
+use WPRoadie\Safety\Mode;
+use WPRoadie\Safety\Settings;
 
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -196,6 +199,28 @@ wproadie_test(
 			remove_filter( 'http_request_args', $ca_filter );
 		}
 		wproadie_assert( ! array_key_exists( $file, get_plugins() ), 'cleanup should remove the plugin' );
+	}
+);
+
+wproadie_test(
+	'production mode offers plugin and theme updates but no installs or (de)activations',
+	function () {
+		try {
+			Settings::set( 'mode', Mode::PRODUCTION );
+			$names = ( new Registry() )->enabled_names();
+			foreach ( array( 'update-plugin', 'update-theme' ) as $slug ) {
+				wproadie_assert( in_array( 'wproadie/' . $slug, $names, true ), $slug . ' should be offered on a live site' );
+			}
+			foreach ( array( 'install-plugin', 'install-theme', 'activate-plugin', 'deactivate-plugin', 'activate-theme' ) as $slug ) {
+				wproadie_assert( ! in_array( 'wproadie/' . $slug, $names, true ), $slug . ' must stay off on a live site' );
+			}
+			wproadie_assert_same( true, wp_get_ability( 'wproadie/update-plugin' )->check_permissions( array( 'plugin' => 'hello.php' ) ) );
+			wproadie_assert_same( false, wp_get_ability( 'wproadie/install-plugin' )->check_permissions( array( 'slug' => 'hello-dolly' ) ) );
+			Settings::set( 'mode', Mode::READ_ONLY );
+			wproadie_assert_same( false, wp_get_ability( 'wproadie/update-plugin' )->check_permissions( array( 'plugin' => 'hello.php' ) ) );
+		} finally {
+			Settings::set( 'mode', '' );
+		}
 	}
 );
 

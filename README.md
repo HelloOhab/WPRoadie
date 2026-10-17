@@ -127,7 +127,7 @@ The AI acts as you, so everything it does is logged under your name. Keep the pa
    | Mode | Allows |
    | --- | --- |
    | Staging | everything enabled |
-   | Production | read + write (content, media, menus, settings) |
+   | Production | read + write (content, media, menus, settings) + maintain (plugin and theme updates) |
    | Read-only | read |
 
    The mode comes from `WPROADIE_MODE` in wp-config.php, then the admin setting, then `wp_get_environment_type()` (`staging`, `development` and `local` map to Staging; anything else, including unset, maps to Production). It is checked again on every call.
