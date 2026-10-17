@@ -88,7 +88,7 @@ function pair_test_start(): array {
 	wproadie_assert( is_array( $started ), is_wp_error( $started ) ? $started->get_error_message() : 'start failed' );
 	$query = array();
 	wp_parse_str( (string) wp_parse_url( $started['redirect'], PHP_URL_QUERY ), $query );
-	$pending = get_transient( Pairing::TRANSIENT_PREFIX . $query['state'] );
+	$pending = Pairing::pending( $query['state'] );
 	return array( $query['state'], $pending, $query, $started['redirect'] );
 }
 
@@ -191,7 +191,7 @@ wproadie_test(
 		wproadie_assert_same( 'https://hq.from-filter.test', Pairing::default_url() );
 		remove_filter( 'wproadie_hq_default_url', $filter );
 
-		delete_transient( Pairing::TRANSIENT_PREFIX . $state );
+		Pairing::forget( $state );
 	}
 );
 
@@ -269,7 +269,7 @@ wproadie_test(
 				wproadie_assert_same( true, Heartbeat::last_result()['ok'] );
 
 				// The state is spent.
-				wproadie_assert_same( false, get_transient( Pairing::TRANSIENT_PREFIX . $state ) );
+				wproadie_assert_same( null, Pairing::pending( $state ) );
 				wproadie_assert_error( Pairing::finish( $code, $state ), 'wproadie_pair_expired' );
 
 				$rows = AuditLog::query( array( 'ability' => 'hq/pair' ), 5 )['rows'];
@@ -307,7 +307,7 @@ wproadie_test(
 				wproadie_assert_error( Pairing::finish( $code, $state ), 'wproadie_pair_expired' );
 			}
 		);
-		wproadie_assert( is_array( get_transient( Pairing::TRANSIENT_PREFIX . $state ) ), 'still pending for its owner' );
+		wproadie_assert( is_array( Pairing::pending( $state ) ), 'still pending for its owner' );
 
 		// HQ says the code is no good: friendly error, state spent anyway.
 		$result = null;
@@ -366,7 +366,7 @@ wproadie_test(
 			wproadie_assert_error( Pairing::finish( Connection::base64url_encode( random_bytes( 32 ) ), $state ), 'wproadie_disabled' );
 		} finally {
 			Settings::set( 'disabled', false );
-			delete_transient( Pairing::TRANSIENT_PREFIX . $state );
+			Pairing::forget( $state );
 		}
 	}
 );

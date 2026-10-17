@@ -24,10 +24,16 @@ defined( 'ABSPATH' ) || exit;
 
 final class Pairing {
 
-	const TRANSIENT_PREFIX = 'wproadie_hq_pair_';
-	const LAST_URL_OPTION  = 'wproadie_hq_last_url';
-	const LIFETIME         = 15 * MINUTE_IN_SECONDS;
-	const PROTOCOL         = '1';
+	/**
+	 * Pending requests live in one option (never a transient: with an object
+	 * cache that is not persistent, e.g. a staging site without Redis, a
+	 * transient set in one request is gone by the next, and the person coming
+	 * back from HQ is told their request expired).
+	 */
+	const PENDING_OPTION  = 'wproadie_hq_pairs';
+	const LAST_URL_OPTION = 'wproadie_hq_last_url';
+	const LIFETIME        = 15 * MINUTE_IN_SECONDS;
+	const PROTOCOL        = '1';
 
 	/**
 	 * The HQ address to suggest: the WPROADIE_HQ_DEFAULT_URL constant, the
@@ -83,14 +89,13 @@ final class Pairing {
 		$state    = bin2hex( random_bytes( 16 ) );
 		$verifier = Connection::base64url_encode( random_bytes( 32 ) );
 
-		set_transient(
-			self::TRANSIENT_PREFIX . $state,
+		self::remember(
+			$state,
 			array(
 				'hq_url'   => $url,
 				'verifier' => $verifier,
 				'user_id'  => (int) $user->ID,
-			),
-			self::LIFETIME
+			)
 		);
 		update_option( self::LAST_URL_OPTION, $url, false );
 
@@ -181,12 +186,12 @@ final class Pairing {
 		}
 
 		$user_id = get_current_user_id();
-		$pending = get_transient( self::TRANSIENT_PREFIX . $state );
+		$pending = self::pending( $state );
 		// Another administrator's request is left alone for them to finish.
-		if ( ! is_array( $pending ) || (int) ( $pending['user_id'] ?? 0 ) !== $user_id || ! $user_id ) {
+		if ( ! $pending || (int) ( $pending['user_id'] ?? 0 ) !== $user_id || ! $user_id ) {
 			return $expired;
 		}
-		delete_transient( self::TRANSIENT_PREFIX . $state );
+		self::forget( $state );
 
 		$hq_url   = (string) $pending['hq_url'];
 		$response = wp_remote_post(
@@ -294,7 +299,57 @@ final class Pairing {
 		if ( ! preg_match( '/^[0-9a-f]{32}$/', $state ) ) {
 			return null;
 		}
-		$pending = get_transient( self::TRANSIENT_PREFIX . $state );
-		return is_array( $pending ) ? (string) $pending['hq_url'] : null;
+		$pending = self::pending( $state );
+		return $pending ? (string) $pending['hq_url'] : null;
+	}
+
+	/**
+	 * All pending requests that have not expired.
+	 *
+	 * @return array<string, array>
+	 */
+	private static function all_pending(): array {
+		$all = get_option( self::PENDING_OPTION, array() );
+		if ( ! is_array( $all ) ) {
+			return array();
+		}
+		$now = time();
+		return array_filter(
+			$all,
+			static function ( $row ) use ( $now ) {
+				return is_array( $row ) && (int) ( $row['expires'] ?? 0 ) > $now;
+			}
+		);
+	}
+
+	/**
+	 * A pending request, or null when unknown or expired.
+	 *
+	 * @param string $state State from start().
+	 */
+	public static function pending( string $state ): ?array {
+		$all = self::all_pending();
+		return isset( $all[ $state ] ) ? $all[ $state ] : null;
+	}
+
+	private static function remember( string $state, array $data ): void {
+		$all           = self::all_pending();
+		$all[ $state ] = $data + array( 'expires' => time() + self::LIFETIME );
+		update_option( self::PENDING_OPTION, $all, false );
+	}
+
+	/**
+	 * Drops a pending request (used, or abandoned).
+	 *
+	 * @param string $state State from start().
+	 */
+	public static function forget( string $state ): void {
+		$all = self::all_pending();
+		unset( $all[ $state ] );
+		if ( $all ) {
+			update_option( self::PENDING_OPTION, $all, false );
+		} else {
+			delete_option( self::PENDING_OPTION );
+		}
 	}
 }
