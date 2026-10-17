@@ -142,7 +142,7 @@ final class Connection {
 		}
 		$stored = get_option( self::OPTION );
 		$home   = is_array( $stored ) ? (string) ( $stored['home'] ?? '' ) : '';
-		if ( '' === $home || $home === self::current_home() ) {
+		if ( '' === $home || self::current_home() === $home ) {
 			return null;
 		}
 		return array(

@@ -187,6 +187,7 @@ wproadie_test(
 	function () {
 		$sent   = 0;
 		$count  = function ( $pre ) use ( &$sent ) {
+			unset( $pre );
 			$sent++;
 			return new WP_Error( 'offline', 'no network in this test' );
 		};
