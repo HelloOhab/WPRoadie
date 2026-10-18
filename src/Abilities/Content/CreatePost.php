@@ -8,6 +8,7 @@
 namespace WPRoadie\Abilities\Content;
 
 use WPRoadie\Abilities\AbilityBase;
+use WPRoadie\Abilities\Divi\Divi;
 use WPRoadie\Log\Undo;
 use WPRoadie\Safety\Mode;
 
@@ -96,10 +97,13 @@ final class CreatePost extends AbilityBase {
 	 * Builder and template settings a request carries, as meta to store:
 	 * what the builders' own editors write when a person ticks their boxes.
 	 *
-	 * @param array $input Validated input.
+	 * @param array    $input       Validated input.
+	 * @param int|null $divi_format 4 or 5 when known (the Divi tools know their
+	 *                              document); otherwise read from the content or
+	 *                              the site's Divi version.
 	 * @return array{set: array<string, string>, delete: string[]}|\WP_Error
 	 */
-	public static function page_settings( array $input ) {
+	public static function page_settings( array $input, ?int $divi_format = null ) {
 		$set    = array();
 		$delete = array();
 		switch ( $input['builder'] ?? null ) {
@@ -107,6 +111,14 @@ final class CreatePost extends AbilityBase {
 				$set['_et_pb_use_builder'] = 'on';
 				$set['_et_pb_page_layout'] = 'et_full_width_page';
 				$set['_et_pb_show_title']  = 'off';
+				// Divi 5 records two more markers on save. Without them the first
+				// Visual Builder open treats the page as classic content, wraps
+				// it in a placeholder and parks the real layout in
+				// _et_pb_old_content: the build looks lost.
+				if ( 5 === ( $divi_format ?? self::divi_format( (string) ( $input['content'] ?? '' ) ) ) ) {
+					$set['_et_pb_use_divi_5']         = 'on';
+					$set['_et_pb_show_page_creation'] = 'off';
+				}
 				break;
 			case 'elementor':
 				$set['_elementor_edit_mode']     = 'builder';
@@ -117,6 +129,8 @@ final class CreatePost extends AbilityBase {
 				break;
 			case 'none':
 				$set['_et_pb_use_builder'] = 'off';
+				$delete[]                  = '_et_pb_use_divi_5';
+				$delete[]                  = '_et_pb_show_page_creation';
 				$delete[]                  = '_elementor_edit_mode';
 				break;
 		}
@@ -133,6 +147,20 @@ final class CreatePost extends AbilityBase {
 			'set'    => $set,
 			'delete' => $delete,
 		);
+	}
+
+	/**
+	 * Which Divi format a page will be built in: shortcodes say 4, divi/
+	 * blocks say 5, and empty content follows the site's Divi version.
+	 */
+	public static function divi_format( string $content ): int {
+		if ( Divi::starts_with_shortcodes( $content ) ) {
+			return 4;
+		}
+		if ( false !== strpos( $content, '<!-- wp:divi/' ) ) {
+			return 5;
+		}
+		return version_compare( Divi::site_builder_version(), '5', '>=' ) ? 5 : 4;
 	}
 
 	/**

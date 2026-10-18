@@ -140,6 +140,30 @@ abstract class DiviAbility extends AbilityBase {
 		$undo = Undo::post( $post->ID );
 		$this->add_undo( $undo );
 
+		// A page whose Divi content was written straight into post_content
+		// (never opened in the visual builder) lacks the settings the builder
+		// records on save: builder on, full width, title hidden, and on Divi 5
+		// its two markers. Without them WordPress renders it as an ordinary
+		// page, and Divi 5's first builder open would bury the layout. They
+		// are written before the content: Divi memoizes "is this a builder
+		// page" per request, and save_post listeners ask during the update.
+		$marked = array();
+		if ( ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) && 'on' !== get_post_meta( $post->ID, '_et_pb_use_builder', true ) ) {
+			$settings = CreatePost::page_settings( array( 'builder' => 'divi' ), $doc->format );
+			if ( ! is_wp_error( $settings ) ) {
+				$marked = CreatePost::apply_page_settings(
+					(int) $post->ID,
+					$settings,
+					function ( array $record ) {
+						$this->add_undo( $record );
+					}
+				);
+			}
+			if ( 'on' !== get_post_meta( $post->ID, '_et_pb_use_builder', true ) ) {
+				return Divi::error( 'builder_meta_blocked', __( 'The page could not be marked as a Divi Builder page (a plugin or filter blocks _et_pb_use_builder), so the content was not written: the builder would treat it as classic content.', 'wproadie' ), 409 );
+			}
+		}
+
 		$updated = wp_update_post(
 			wp_slash(
 				array(
@@ -160,25 +184,9 @@ abstract class DiviAbility extends AbilityBase {
 			'cache'       => Divi::is_active() ? Divi::clear_cache( (int) $post->ID ) : array(),
 		);
 
-		// A page whose Divi content was written straight into post_content
-		// (never opened in the visual builder) lacks the settings the builder
-		// records on save: builder on, full width, title hidden. Without them
-		// WordPress renders it as an ordinary page, sidebar and title and all.
-		if ( ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) && 'on' !== get_post_meta( $post->ID, '_et_pb_use_builder', true ) ) {
-			$settings = CreatePost::page_settings( array( 'builder' => 'divi' ) );
-			if ( ! is_wp_error( $settings ) ) {
-				$applied = CreatePost::apply_page_settings(
-					(int) $post->ID,
-					$settings,
-					function ( array $record ) {
-						$this->add_undo( $record );
-					}
-				);
-				if ( $applied ) {
-					$result['page_settings'] = $applied;
-					$result['note']          = __( 'This page had never been saved in the Divi Builder, so its page settings were recorded too: builder on, full width, title hidden.', 'wproadie' );
-				}
-			}
+		if ( $marked ) {
+			$result['page_settings'] = $marked;
+			$result['note']          = __( 'This page had never been saved in the Divi Builder, so its page settings were recorded too: builder on, full width, title hidden.', 'wproadie' );
 		}
 		$link = get_permalink( $post->ID );
 		if ( $link && ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) ) {
