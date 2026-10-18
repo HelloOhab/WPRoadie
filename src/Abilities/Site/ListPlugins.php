@@ -96,10 +96,14 @@ final class ListPlugins extends AbilityBase {
 			);
 		}
 
-		return array(
+		$result = array(
 			'plugins'          => $plugins,
 			'must_use_plugins' => $must_use,
 			'updates_checked'  => ( is_object( $updates ) && isset( $updates->last_checked ) ) ? gmdate( 'c', (int) $updates->last_checked ) : null,
 		);
+		if ( null === $result['updates_checked'] ) {
+			$result['note'] = __( 'WordPress has no update check on record right now (it is cleared after every update and redone within hours). An empty update list may just mean nothing has been checked yet: apply-updates with dry_run: true checks now.', 'wproadie' );
+		}
+		return $result;
 	}
 }

@@ -175,7 +175,8 @@ final class UpdateWordPress extends AbilityBase {
 		// The new files are in place; the database upgrade runs in a fresh
 		// request, as wp-admin's redirect to upgrade.php would, so the new
 		// version's code does it.
-		$db     = self::upgrade_database();
+		$db = self::upgrade_database();
+		Heartbeat::send_soon();
 		$after  = SafeUpdate::probe();
 		$broken = true === $before['ok'] && false === $after['ok'];
 
