@@ -1025,6 +1025,27 @@ wproadie_test(
 			);
 			wproadie_assert_same( '0.0.0.1', $added['module']['path'] );
 			wproadie_assert_same( 'et_pb_button', $added['module']['type'] );
+			// Third-party modules keep their own shortcode (Divi registers none in REST/MCP requests).
+			wproadie_assert_same( false, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'dsm_button' ) );
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'pricing_tables' ) );
+			// WordPress core registers [video] and [audio]; Divi's own modules still win.
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'video' ) );
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'audio' ) );
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'wc_add_to_cart' ) );
+			wproadie_assert_same( false, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'et_pb_text' ) );
+			$third = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'         => $id,
+						'container'  => '0.0.0',
+						'type'       => 'dsm_button',
+						'attributes' => array( 'button_one_text' => 'Go' ),
+					)
+				)
+			);
+			wproadie_assert_same( 'dsm_button', $third['module']['type'] );
+			wproadie_ok( Undo::revert( (int) $third['undo_id'] ) );
 			wproadie_assert_same( true, $added['verification']['verified'], wp_json_encode( $added['verification'] ) );
 			wproadie_assert( $added['verification']['module_count'] >= 2 );
 			wproadie_assert( ! in_array( '0.0.0', $added['verification']['empty_structural'], true ), 'the column just filled is not empty' );

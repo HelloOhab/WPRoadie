@@ -177,7 +177,7 @@ final class AddModule extends DiviAbility {
 			return $type;
 		}
 		$type = str_replace( '-', '_', $type );
-		if ( 0 !== strpos( $type, 'et_pb_' ) && ! shortcode_exists( $type ) ) {
+		if ( self::needs_divi_prefix( $type ) ) {
 			$type = 'et_pb_' . $type;
 		}
 		$in_column = 'column' === $doc->role( $container );
@@ -188,6 +188,94 @@ final class AddModule extends DiviAbility {
 			$type = $in_inner ? 'et_pb_column_inner' : 'et_pb_column';
 		}
 		return $type;
+	}
+
+	/**
+	 * Divi 4's own module slugs, as they follow et_pb_. A short name is
+	 * prefixed only when it is one of these (or a registered et_pb_ module).
+	 * Any other name is a third-party module's full shortcode (dsm_button,
+	 * dipl_*, ...) and is kept as given: in REST and MCP requests Divi does
+	 * not register shortcodes, so shortcode_exists() cannot be trusted to
+	 * tell them apart.
+	 */
+	const DIVI4_MODULES = array(
+		'section',
+		'row',
+		'row_inner',
+		'column',
+		'column_inner',
+		'accordion',
+		'accordion_item',
+		'audio',
+		'blog',
+		'blurb',
+		'button',
+		'circle_counter',
+		'code',
+		'comments',
+		'contact_field',
+		'contact_form',
+		'countdown_timer',
+		'counter',
+		'counters',
+		'cta',
+		'divider',
+		'filterable_portfolio',
+		'fullwidth_code',
+		'fullwidth_header',
+		'fullwidth_image',
+		'fullwidth_map',
+		'fullwidth_menu',
+		'fullwidth_portfolio',
+		'fullwidth_post_content',
+		'fullwidth_post_slider',
+		'fullwidth_post_title',
+		'fullwidth_slider',
+		'gallery',
+		'icon',
+		'image',
+		'login',
+		'map',
+		'map_pin',
+		'menu',
+		'number_counter',
+		'portfolio',
+		'post_content',
+		'post_nav',
+		'post_slider',
+		'post_title',
+		'pricing_table',
+		'pricing_tables',
+		'pricing_item',
+		'search',
+		'shop',
+		'sidebar',
+		'signup',
+		'signup_custom_field',
+		'slide',
+		'slider',
+		'social_media_follow',
+		'social_media_follow_network',
+		'tab',
+		'tabs',
+		'team_member',
+		'testimonial',
+		'text',
+		'toggle',
+		'video',
+		'video_slider',
+		'video_slider_item',
+		'heading',
+	);
+
+	public static function needs_divi_prefix( string $type ): bool {
+		if ( 0 === strpos( $type, 'et_pb_' ) ) {
+			return false;
+		}
+		if ( in_array( $type, self::DIVI4_MODULES, true ) || 0 === strpos( $type, 'wc_' ) ) {
+			return true;
+		}
+		return shortcode_exists( 'et_pb_' . $type ) && ! shortcode_exists( $type );
 	}
 
 	private function is_specialty_or_fullwidth( array $attrs ): bool {
