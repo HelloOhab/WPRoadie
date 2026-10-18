@@ -984,6 +984,24 @@ wproadie_test(
 );
 
 wproadie_test(
+	'get-skill serves the Divi skill where Divi runs, and the briefing lists it',
+	function () {
+		// Registered at init only where Divi runs; the test site gets Divi by filter, after init.
+		wproadie_test_enable_group( 'site' );
+		wproadie_assert( (bool) wp_get_ability( 'wproadie/get-skill' ), 'get-skill should be registered with Divi available' );
+		$skill = wproadie_ok( wproadie_call( 'get-skill', array( 'name' => 'divi-build-page' ) ) );
+		wproadie_assert_same( 'divi-build-page', $skill['name'] );
+		wproadie_assert( false !== strpos( $skill['body'], '## Hard rules' ) );
+		wproadie_assert( false !== strpos( $skill['body'], 'verification' ) );
+		wproadie_assert( false !== strpos( wp_get_ability( 'wproadie/get-skill' )->get_description(), 'divi-build-page' ), 'the catalogue is in the tool description' );
+		// The input schema's enum already refuses unknown names.
+		wproadie_assert_error( wproadie_call( 'get-skill', array( 'name' => 'no-such-skill' ) ) );
+		$briefing = ( new \WPRoadie\Prompts\SiteBriefing() )->run_internal();
+		wproadie_assert( false !== strpos( wp_json_encode( $briefing ), 'divi-build-page' ), 'the briefing lists the skill' );
+	}
+);
+
+wproadie_test(
 	'divi-add-module adds modules, sections and rows in both formats',
 	function () {
 		$pages = wproadie_divi_pages();
@@ -1007,6 +1025,9 @@ wproadie_test(
 			);
 			wproadie_assert_same( '0.0.0.1', $added['module']['path'] );
 			wproadie_assert_same( 'et_pb_button', $added['module']['type'] );
+			wproadie_assert_same( true, $added['verification']['verified'], wp_json_encode( $added['verification'] ) );
+			wproadie_assert( $added['verification']['module_count'] >= 2 );
+			wproadie_assert( ! in_array( '0.0.0', $added['verification']['empty_structural'], true ), 'the column just filled is not empty' );
 			wproadie_divi_assert_only(
 				$before,
 				wproadie_divi_content( $id ),
@@ -1028,6 +1049,10 @@ wproadie_test(
 			);
 			wproadie_assert_same( '0', $section['module']['path'] );
 			wproadie_assert_same( array( '0.0', '0.0.0', '0.0.1' ), array_column( $section['children'], 'path' ) );
+			foreach ( array( '0.0.0', '0.0.1' ) as $empty_path ) {
+				wproadie_assert( in_array( $empty_path, $section['verification']['empty_structural'], true ), 'new empty column ' . $empty_path . ' is reported' );
+			}
+			wproadie_assert( ! empty( $section['verification']['warnings'] ) );
 			wproadie_assert( 0 === strpos( wproadie_divi_content( $id ), '[et_pb_section _builder_version="4.27.4" admin_label="New top"][et_pb_row _builder_version="4.27.4" column_structure="1_3,2_3"][et_pb_column _builder_version="4.27.4" type="1_3"][/et_pb_column]' ) );
 
 			// A row in a specialty column becomes et_pb_row_inner.

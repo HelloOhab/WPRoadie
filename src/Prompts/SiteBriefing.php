@@ -15,6 +15,7 @@ use WPRoadie\Abilities\Site\SiteOverview;
 use WPRoadie\Abilities\Site\Versions;
 use WPRoadie\Log\AuditLog;
 use WPRoadie\Safety\Mode;
+use WPRoadie\Skills\Skills;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -77,6 +78,14 @@ final class SiteBriefing extends AbilityBase {
 		}
 
 		$lines[] = '';
+		if ( Skills::catalogue() ) {
+			$lines[] = '## Skills on this site';
+			$lines[] = 'Read the matching one with get-skill before such a job:';
+			foreach ( Skills::catalogue() as $line ) {
+				$lines[] = '- ' . $line;
+			}
+			$lines[] = '';
+		}
 		$lines[] = '## Safety';
 		$lines[] = sprintf( '- WPRoadie mode: **%s**. %s', Mode::label( Mode::current() ), self::mode_note() );
 		$lines[] = '- Every call is logged under your user. Changes return an undo_id; use undo-change to reverse one.';

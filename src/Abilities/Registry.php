@@ -27,6 +27,7 @@ final class Registry {
 		Site\Versions::class,
 		Site\HealthCheck::class,
 		Site\ActivityLog::class,
+		Site\GetSkill::class,
 
 		// Prompts (read).
 		\WPRoadie\Prompts\SiteBriefing::class,
