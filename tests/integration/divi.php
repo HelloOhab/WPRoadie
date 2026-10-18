@@ -1028,6 +1028,9 @@ wproadie_test(
 			// Third-party modules keep their own shortcode (Divi registers none in REST/MCP requests).
 			wproadie_assert_same( false, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'dsm_button' ) );
 			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'pricing_tables' ) );
+			// WordPress core registers [video] and [audio]; Divi's own modules still win.
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'video' ) );
+			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'audio' ) );
 			wproadie_assert_same( true, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'wc_add_to_cart' ) );
 			wproadie_assert_same( false, \WPRoadie\Abilities\Divi\AddModule::needs_divi_prefix( 'et_pb_text' ) );
 			$third = wproadie_ok(
