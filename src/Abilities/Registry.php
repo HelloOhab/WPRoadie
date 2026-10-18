@@ -107,6 +107,7 @@ final class Registry {
 		Extensions\ActivateTheme::class,
 		Extensions\UpdateTheme::class,
 		Extensions\ApplyUpdates::class,
+		Extensions\UpdateWordPress::class,
 
 		// Users (admin).
 		Users\ListUsers::class,
