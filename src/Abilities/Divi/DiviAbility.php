@@ -193,10 +193,7 @@ abstract class DiviAbility extends AbilityBase {
 			$result['link'] = (string) $link;
 		}
 
-		$saved = get_post( $post->ID );
-		if ( $saved && $saved->post_content !== $content ) {
-			$result['note'] = __( 'WordPress re-encoded parts of the page while saving (same meaning, different bytes).', 'wproadie' );
-		}
+		$result['verification'] = $this->verify( (int) $post->ID, $content, $doc->format );
 
 		if ( ! function_exists( 'wp_check_post_lock' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/post.php';
@@ -209,7 +206,54 @@ abstract class DiviAbility extends AbilityBase {
 				__( '%s has this page open in an editor right now. If they save, their version replaces this change; tell them, or undo this change.', 'wproadie' ),
 				$user ? $user->display_name : __( 'Someone', 'wproadie' )
 			);
+			$result['verification']['warnings'][] = $result['warning'];
 		}
 		return $result;
+	}
+
+	/**
+	 * Proof that a write landed, and what the saved page looks like now: a
+	 * write response alone is not proof. The AI reads it after every write.
+	 *
+	 * @param int    $post_id The page.
+	 * @param string $written The content that was sent to wp_update_post().
+	 * @param int    $format  4 or 5.
+	 */
+	protected function verify( int $post_id, string $written, int $format ): array {
+		clean_post_cache( $post_id );
+		$saved = (string) get_post_field( 'post_content', $post_id, 'raw' );
+		if ( 5 === $format ) {
+			$verified = $saved === $written || Divi::same_blocks( parse_blocks( $written ), parse_blocks( $saved ) );
+		} else {
+			$verified = $saved === $written;
+		}
+		$fresh    = new Document( $saved, $format );
+		$empty    = $fresh->empty_structural();
+		$code     = $fresh->code_modules();
+		$warnings = array();
+		if ( ! $verified ) {
+			$warnings[] = __( 'The saved page differs from what was written (a plugin changed it on save). Read it again with divi-get-page before the next edit; do not retry blindly.', 'wproadie' );
+		}
+		if ( $empty ) {
+			$warnings[] = sprintf(
+				/* translators: %s: comma-separated paths. */
+				__( 'Nothing inside: %s. Fill or remove these before finishing.', 'wproadie' ),
+				implode( ', ', $empty )
+			);
+		}
+		if ( $code ) {
+			$warnings[] = sprintf(
+				/* translators: %s: comma-separated paths. */
+				__( 'Code modules (raw HTML) at %s: fine only for a snippet the person asked to embed, never to fake a layout or add CSS.', 'wproadie' ),
+				implode( ', ', $code )
+			);
+		}
+		return array(
+			'verified'         => $verified,
+			'module_count'     => $fresh->module_count(),
+			'empty_structural' => $empty,
+			'raw_html_modules' => $code,
+			'warnings'         => $warnings,
+		);
 	}
 }

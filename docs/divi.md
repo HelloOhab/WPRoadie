@@ -31,6 +31,14 @@ All tools are named `wproadie-divi-…` in MCP clients. Every change returns an 
 
 Paths count children from 0: `0.1.0.2` is section 0 → row 1 → column 0 → module 2. Divi 5's `divi/placeholder` wrapper is not counted. Children of parent modules continue the path (`0.1.0.2.0` is the first tab of a Tabs module). Elements can also be found by admin label (`label`, case-insensitive, must be unique) or CSS ID (`css_id`). Paths change after inserts, moves and removals; each result returns the new paths.
 
+## The skill
+
+WPRoadie ships a skill, `divi-build-page`, that tells the AI how to build a page with these tools so it comes out as a real Divi page: structure, page settings, the hard rules (no faked layouts in Code modules, no custom CSS), Divi 4 against Divi 5, and how to verify. The `get-skill` tool lists the skills that apply to the site in its description and returns the body on demand; the site briefing lists them too. The skill lives in `src/Skills/library/divi-build-page/SKILL.md`.
+
+## Verification of every write
+
+Every Divi write returns a `verification` block: `verified` (the saved page is what was written, compared as blocks on Divi 5), `module_count`, `empty_structural` (sections, rows and columns with nothing inside), `raw_html_modules` (Code modules) and `warnings`, including an editor lock. The skill tells the AI to read it before the next call.
+
 ## Safety
 
 - **Byte-exact round trips.** The parsers keep every byte of the page: each element remembers its exact opening and closing tags and the text between elements. Saving a page that was not changed reproduces it byte for byte, and an edit rewrites only the opening tag of the element it targets (Divi 4: only the one attribute; Divi 5: only that block's JSON comment, re-encoded with WordPress's `serialize_block_attributes()`, the encoder Divi 5 itself uses).

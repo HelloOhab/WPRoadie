@@ -422,6 +422,47 @@ final class Document {
 		return $count;
 	}
 
+	/**
+	 * Sections, rows and columns with nothing inside, as paths.
+	 *
+	 * @return string[]
+	 */
+	public function empty_structural(): array {
+		$paths = array();
+		foreach ( $this->all() as $entry ) {
+			$role = $this->role( $entry['node'] );
+			if ( 'module' === $role || 'placeholder' === $role ) {
+				continue;
+			}
+			$has_child = false;
+			foreach ( $entry['node']->children() as $child ) {
+				if ( $child instanceof Node ) {
+					$has_child = true;
+					break;
+				}
+			}
+			if ( ! $has_child ) {
+				$paths[] = $entry['path'];
+			}
+		}
+		return $paths;
+	}
+
+	/**
+	 * Code modules (raw HTML) on the page, as paths.
+	 *
+	 * @return string[]
+	 */
+	public function code_modules(): array {
+		$paths = array();
+		foreach ( $this->all() as $entry ) {
+			if ( in_array( strtolower( $entry['node']->name ), array( 'et_pb_code', 'et_pb_fullwidth_code', 'divi/code', 'divi/fullwidth-code' ), true ) ) {
+				$paths[] = $entry['path'];
+			}
+		}
+		return $paths;
+	}
+
 	// Structural edits.
 
 
