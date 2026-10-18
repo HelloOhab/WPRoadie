@@ -37,18 +37,22 @@ final class ContentHelper {
 		'_et_pb_page_layout',
 		'_et_pb_show_title',
 		'_et_pb_side_nav',
+		'_et_pb_use_divi_5',
+		'_et_pb_show_page_creation',
 		'_elementor_edit_mode',
 		'_elementor_template_type',
 	);
 
 	/** The values each allow-listed builder key accepts, as the builders store them. */
 	const META_ALLOWED_VALUES = array(
-		'_et_pb_use_builder'       => array( 'on', 'off' ),
-		'_et_pb_page_layout'       => array( 'et_full_width_page', 'et_no_sidebar', 'et_right_sidebar', 'et_left_sidebar' ),
-		'_et_pb_show_title'        => array( 'on', 'off' ),
-		'_et_pb_side_nav'          => array( 'on', 'off' ),
-		'_elementor_edit_mode'     => array( 'builder', '' ),
-		'_elementor_template_type' => array( 'wp-page', 'wp-post' ),
+		'_et_pb_use_builder'        => array( 'on', 'off' ),
+		'_et_pb_page_layout'        => array( 'et_full_width_page', 'et_no_sidebar', 'et_right_sidebar', 'et_left_sidebar' ),
+		'_et_pb_show_title'         => array( 'on', 'off' ),
+		'_et_pb_side_nav'           => array( 'on', 'off' ),
+		'_et_pb_use_divi_5'         => array( 'on', 'off' ),
+		'_et_pb_show_page_creation' => array( 'on', 'off' ),
+		'_elementor_edit_mode'      => array( 'builder', '' ),
+		'_elementor_template_type'  => array( 'wp-page', 'wp-post' ),
 	);
 
 	/**

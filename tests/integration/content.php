@@ -516,6 +516,36 @@ wproadie_test(
 				'wproadie_protected_meta'
 			);
 
+			// Divi 5 content carries two more markers; builder: none removes them.
+			$five = wproadie_ok(
+				wproadie_call(
+					'create-post',
+					array(
+						'post_type' => 'page',
+						'title'     => 'Divi 5 demo',
+						'builder'   => 'divi',
+						'content'   => '<!-- wp:divi/section --><!-- /wp:divi/section -->',
+					)
+				)
+			);
+			try {
+				wproadie_assert_same( 'on', get_post_meta( $five['id'], '_et_pb_use_divi_5', true ) );
+				wproadie_assert_same( 'off', get_post_meta( $five['id'], '_et_pb_show_page_creation', true ) );
+				wproadie_ok(
+					wproadie_call(
+						'update-post',
+						array(
+							'id'      => $five['id'],
+							'builder' => 'none',
+						)
+					)
+				);
+				wproadie_assert( ! metadata_exists( 'post', $five['id'], '_et_pb_use_divi_5' ), 'none removes the Divi 5 marker' );
+			} finally {
+				wp_delete_post( $five['id'], true );
+			}
+			wproadie_assert( ! metadata_exists( 'post', $id, '_et_pb_use_divi_5' ), 'shortcode-era pages get no Divi 5 marker' );
+
 			wproadie_ok(
 				wproadie_call(
 					'update-post',
