@@ -424,6 +424,119 @@ wproadie_test(
 );
 
 wproadie_test(
+	'builder page settings: create-post and update-post set them, update-post-meta allows and checks them',
+	function () {
+		$created = wproadie_ok(
+			wproadie_call(
+				'create-post',
+				array(
+					'post_type' => 'page',
+					'title'     => 'Divi demo',
+					'builder'   => 'divi',
+				)
+			)
+		);
+		$id      = (int) $created['id'];
+		try {
+			wproadie_assert_same( 'on', get_post_meta( $id, '_et_pb_use_builder', true ) );
+			wproadie_assert_same( 'et_full_width_page', get_post_meta( $id, '_et_pb_page_layout', true ) );
+			wproadie_assert_same( 'off', get_post_meta( $id, '_et_pb_show_title', true ) );
+			wproadie_assert_same( 'et_full_width_page', $created['page_settings']['_et_pb_page_layout'] );
+
+			// Only settings, no fields: still a valid update, and undoable.
+			$updated = wproadie_ok(
+				wproadie_call(
+					'update-post',
+					array(
+						'id'       => $id,
+						'builder'  => 'none',
+						'template' => 'default',
+					)
+				)
+			);
+			wproadie_assert_same( 'off', get_post_meta( $id, '_et_pb_use_builder', true ) );
+			wproadie_assert_same( 'default', get_post_meta( $id, '_wp_page_template', true ) );
+			wproadie_ok( Undo::revert( $updated['undo_id'] ) );
+			wproadie_assert_same( 'on', get_post_meta( $id, '_et_pb_use_builder', true ), 'undo should turn the builder back on' );
+
+			wproadie_assert_error(
+				wproadie_call(
+					'update-post',
+					array(
+						'id'       => $id,
+						'template' => 'no-such-template.php',
+					)
+				),
+				'wproadie_invalid_value'
+			);
+
+			// update-post-meta: the builder keys are allowed, with their own vocabulary; other _keys stay blocked.
+			wproadie_ok(
+				wproadie_call(
+					'update-post-meta',
+					array(
+						'id'    => $id,
+						'key'   => '_et_pb_page_layout',
+						'value' => 'et_no_sidebar',
+					)
+				)
+			);
+			wproadie_assert_same( 'et_no_sidebar', get_post_meta( $id, '_et_pb_page_layout', true ) );
+			wproadie_assert_error(
+				wproadie_call(
+					'update-post-meta',
+					array(
+						'id'    => $id,
+						'key'   => '_et_pb_page_layout',
+						'value' => 'wide',
+					)
+				),
+				'wproadie_invalid_value'
+			);
+			wproadie_assert_error(
+				wproadie_call(
+					'update-post-meta',
+					array(
+						'id'    => $id,
+						'key'   => '_et_pb_use_builder',
+						'value' => true,
+					)
+				),
+				'wproadie_invalid_value'
+			);
+			wproadie_assert_error(
+				wproadie_call(
+					'update-post-meta',
+					array(
+						'id'    => $id,
+						'key'   => '_et_pb_secret',
+						'value' => 'x',
+					)
+				),
+				'wproadie_protected_meta'
+			);
+
+			wproadie_ok(
+				wproadie_call(
+					'update-post',
+					array(
+						'id'      => $id,
+						'builder' => 'elementor',
+					)
+				)
+			);
+			wproadie_assert_same( 'builder', get_post_meta( $id, '_elementor_edit_mode', true ) );
+			wproadie_assert_same( 'wp-page', get_post_meta( $id, '_elementor_template_type', true ) );
+			if ( defined( 'ELEMENTOR_VERSION' ) ) {
+				wproadie_assert_same( 'elementor_header_footer', get_post_meta( $id, '_wp_page_template', true ) );
+			}
+		} finally {
+			wp_delete_post( $id, true );
+		}
+	}
+);
+
+wproadie_test(
 	'terms: list, create and undo',
 	function () {
 		$result  = wproadie_ok(

@@ -12,6 +12,7 @@ namespace WPRoadie\Abilities\Divi;
 
 use WP_Post;
 use WPRoadie\Abilities\AbilityBase;
+use WPRoadie\Abilities\Content\CreatePost;
 use WPRoadie\Log\Undo;
 
 defined( 'ABSPATH' ) || exit;
@@ -158,7 +159,28 @@ abstract class DiviAbility extends AbilityBase {
 			'revision_id' => isset( $undo['revision_id'] ) ? (int) $undo['revision_id'] : null,
 			'cache'       => Divi::is_active() ? Divi::clear_cache( (int) $post->ID ) : array(),
 		);
-		$link   = get_permalink( $post->ID );
+
+		// A page whose Divi content was written straight into post_content
+		// (never opened in the visual builder) lacks the settings the builder
+		// records on save: builder on, full width, title hidden. Without them
+		// WordPress renders it as an ordinary page, sidebar and title and all.
+		if ( ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) && 'on' !== get_post_meta( $post->ID, '_et_pb_use_builder', true ) ) {
+			$settings = CreatePost::page_settings( array( 'builder' => 'divi' ) );
+			if ( ! is_wp_error( $settings ) ) {
+				$applied = CreatePost::apply_page_settings(
+					(int) $post->ID,
+					$settings,
+					function ( array $record ) {
+						$this->add_undo( $record );
+					}
+				);
+				if ( $applied ) {
+					$result['page_settings'] = $applied;
+					$result['note']          = __( 'This page had never been saved in the Divi Builder, so its page settings were recorded too: builder on, full width, title hidden.', 'wproadie' );
+				}
+			}
+		}
+		$link = get_permalink( $post->ID );
 		if ( $link && ! in_array( $post->post_type, Divi::LAYOUT_TYPES, true ) ) {
 			$result['link'] = (string) $link;
 		}
