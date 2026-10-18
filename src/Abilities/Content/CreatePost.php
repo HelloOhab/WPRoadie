@@ -80,7 +80,88 @@ final class CreatePost extends AbilityBase {
 				'type'        => 'string',
 				'description' => __( 'Publish date in the site\'s local time, e.g. 2026-11-01T09:00:00 (add an offset such as +02:00 or Z to give another zone). A future date with status publish or future schedules the item.', 'wproadie' ),
 			),
+			'builder'    => array(
+				'type'        => 'string',
+				'enum'        => array( 'divi', 'elementor', 'none' ),
+				'description' => __( 'Set the page up for a page builder, as its editor would: "divi" turns the Divi Builder on, makes the page full width and hides the title; "elementor" marks the page as built with Elementor on its header-and-footer template; "none" turns the builders off. Leave out to change nothing.', 'wproadie' ),
+			),
+			'template'   => array(
+				'type'        => 'string',
+				'description' => __( 'Page template slug: "default", one of the theme\'s templates (e.g. "page-template-blank.php" for Divi\'s blank page), or an Elementor template (elementor_header_footer, elementor_canvas, elementor_theme). Unknown templates are refused with the list.', 'wproadie' ),
+			),
 		);
+	}
+
+	/**
+	 * Builder and template settings a request carries, as meta to store:
+	 * what the builders' own editors write when a person ticks their boxes.
+	 *
+	 * @param array $input Validated input.
+	 * @return array{set: array<string, string>, delete: string[]}|\WP_Error
+	 */
+	public static function page_settings( array $input ) {
+		$set    = array();
+		$delete = array();
+		switch ( $input['builder'] ?? null ) {
+			case 'divi':
+				$set['_et_pb_use_builder'] = 'on';
+				$set['_et_pb_page_layout'] = 'et_full_width_page';
+				$set['_et_pb_show_title']  = 'off';
+				break;
+			case 'elementor':
+				$set['_elementor_edit_mode']     = 'builder';
+				$set['_elementor_template_type'] = 'wp-page';
+				if ( ! isset( $input['template'] ) && defined( 'ELEMENTOR_VERSION' ) ) {
+					$set['_wp_page_template'] = 'elementor_header_footer';
+				}
+				break;
+			case 'none':
+				$set['_et_pb_use_builder'] = 'off';
+				$delete[]                  = '_elementor_edit_mode';
+				break;
+		}
+		if ( isset( $input['template'] ) ) {
+			$set['_wp_page_template'] = (string) $input['template'];
+		}
+		foreach ( $set as $key => $value ) {
+			$check = ContentHelper::meta_value_check( $key, $value );
+			if ( is_wp_error( $check ) ) {
+				return $check;
+			}
+		}
+		return array(
+			'set'    => $set,
+			'delete' => $delete,
+		);
+	}
+
+	/**
+	 * Stores the settings from page_settings(), with an undo record each.
+	 *
+	 * @param int      $post_id  The post.
+	 * @param array    $settings From page_settings().
+	 * @param callable $add_undo Receives undo records.
+	 * @return array<string, string|null> What was stored (null = removed).
+	 */
+	public static function apply_page_settings( int $post_id, array $settings, callable $add_undo ): array {
+		$applied = array();
+		foreach ( $settings['set'] as $key => $value ) {
+			if ( (string) get_post_meta( $post_id, $key, true ) === $value ) {
+				continue;
+			}
+			$add_undo( Undo::meta( 'post', $post_id, $key ) );
+			update_post_meta( $post_id, $key, $value );
+			$applied[ $key ] = $value;
+		}
+		foreach ( $settings['delete'] as $key ) {
+			if ( ! metadata_exists( 'post', $post_id, $key ) ) {
+				continue;
+			}
+			$add_undo( Undo::meta( 'post', $post_id, $key ) );
+			delete_post_meta( $post_id, $key );
+			$applied[ $key ] = null;
+		}
+		return $applied;
 	}
 
 	public function input_schema(): array {
@@ -136,11 +217,23 @@ final class CreatePost extends AbilityBase {
 			return $this->error( 'missing_date', __( 'Scheduling needs a date in the future.', 'wproadie' ) );
 		}
 
+		$settings = self::page_settings( $input );
+		if ( is_wp_error( $settings ) ) {
+			return $settings;
+		}
+
 		$id = wp_insert_post( wp_slash( $data ), true );
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
 		$this->add_undo( Undo::post_created( (int) $id ) );
+		$applied = self::apply_page_settings(
+			(int) $id,
+			$settings,
+			function ( array $record ) {
+				$this->add_undo( $record );
+			}
+		);
 
 		$post   = get_post( $id );
 		$result = array(
@@ -154,6 +247,9 @@ final class CreatePost extends AbilityBase {
 		);
 		if ( $post->post_status !== $status ) {
 			$result['note'] = self::status_note( $status, $post->post_status );
+		}
+		if ( $applied ) {
+			$result['page_settings'] = $applied;
 		}
 		return $result;
 	}

@@ -115,6 +115,13 @@ final class UpdatePostMeta extends AbilityBase {
 			);
 		}
 
+		if ( ! $delete ) {
+			$check = ContentHelper::meta_value_check( $key, $input['value'] );
+			if ( is_wp_error( $check ) ) {
+				return $check;
+			}
+		}
+
 		$this->add_undo( Undo::meta( 'post', $post->ID, $key ) );
 
 		if ( $delete ) {

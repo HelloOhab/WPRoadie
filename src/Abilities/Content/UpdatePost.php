@@ -90,7 +90,11 @@ final class UpdatePost extends AbilityBase {
 			return $data;
 		}
 		unset( $data['edit_date'] );
-		if ( ! $data ) {
+		$settings = CreatePost::page_settings( $input );
+		if ( is_wp_error( $settings ) ) {
+			return $settings;
+		}
+		if ( ! $data && ! $settings['set'] && ! $settings['delete'] ) {
 			return $this->error( 'nothing_to_update', __( 'Send at least one field to change.', 'wproadie' ) );
 		}
 		if ( isset( $data['post_date'] ) ) {
@@ -103,11 +107,20 @@ final class UpdatePost extends AbilityBase {
 		$undo = Undo::post( $post->ID );
 		$this->add_undo( $undo );
 
-		$data['ID'] = $post->ID;
-		$updated    = wp_update_post( wp_slash( $data ), true );
-		if ( is_wp_error( $updated ) ) {
-			return $updated;
+		if ( $data ) {
+			$data['ID'] = $post->ID;
+			$updated    = wp_update_post( wp_slash( $data ), true );
+			if ( is_wp_error( $updated ) ) {
+				return $updated;
+			}
 		}
+		$applied = CreatePost::apply_page_settings(
+			$post->ID,
+			$settings,
+			function ( array $record ) {
+				$this->add_undo( $record );
+			}
+		);
 
 		$post   = get_post( $post->ID );
 		$result = array(
@@ -124,6 +137,9 @@ final class UpdatePost extends AbilityBase {
 		);
 		if ( isset( $input['status'] ) && $post->post_status !== $input['status'] ) {
 			$result['note'] = CreatePost::status_note( (string) $input['status'], $post->post_status );
+		}
+		if ( $applied ) {
+			$result['page_settings'] = $applied;
 		}
 		return $result;
 	}

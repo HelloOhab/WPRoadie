@@ -25,8 +25,31 @@ final class ContentHelper {
 	 * - _wp_page_template: the page template slug.
 	 * - _thumbnail_id: the featured image attachment ID.
 	 * - _wp_attachment_image_alt: an attachment's alt text.
+	 * - Divi's page settings: builder on/off, page layout, title and side nav.
+	 * - Elementor's page markers: edit mode and template type.
+	 * Values for these are checked against META_ALLOWED_VALUES.
 	 */
-	const META_ALLOW_LIST = array( '_wp_page_template', '_thumbnail_id', '_wp_attachment_image_alt' );
+	const META_ALLOW_LIST = array(
+		'_wp_page_template',
+		'_thumbnail_id',
+		'_wp_attachment_image_alt',
+		'_et_pb_use_builder',
+		'_et_pb_page_layout',
+		'_et_pb_show_title',
+		'_et_pb_side_nav',
+		'_elementor_edit_mode',
+		'_elementor_template_type',
+	);
+
+	/** The values each allow-listed builder key accepts, as the builders store them. */
+	const META_ALLOWED_VALUES = array(
+		'_et_pb_use_builder'       => array( 'on', 'off' ),
+		'_et_pb_page_layout'       => array( 'et_full_width_page', 'et_no_sidebar', 'et_right_sidebar', 'et_left_sidebar' ),
+		'_et_pb_show_title'        => array( 'on', 'off' ),
+		'_et_pb_side_nav'          => array( 'on', 'off' ),
+		'_elementor_edit_mode'     => array( 'builder', '' ),
+		'_elementor_template_type' => array( 'wp-page', 'wp-post' ),
+	);
 
 	/**
 	 * Post types the content tools never handle. Attachments have their own
@@ -109,6 +132,64 @@ final class ContentHelper {
 	 */
 	public static function meta_key_allowed( string $key ): bool {
 		return in_array( $key, self::META_ALLOW_LIST, true ) || ! is_protected_meta( $key, 'post' );
+	}
+
+	/**
+	 * Whether a value is acceptable for an allow-listed key: the builders'
+	 * own vocabularies, and for _wp_page_template a template the theme (or
+	 * Elementor) really offers, so a typo cannot leave a page unrenderable.
+	 *
+	 * @param string $key   Meta key.
+	 * @param mixed  $value Value to store.
+	 * @return true|WP_Error
+	 */
+	public static function meta_value_check( string $key, $value ) {
+		if ( isset( self::META_ALLOWED_VALUES[ $key ] ) ) {
+			if ( ! is_string( $value ) || ! in_array( $value, self::META_ALLOWED_VALUES[ $key ], true ) ) {
+				return new WP_Error(
+					'wproadie_invalid_value',
+					sprintf(
+						/* translators: 1: meta key, 2: comma-separated list of allowed values. */
+						__( '%1$s takes one of: %2$s.', 'wproadie' ),
+						$key,
+						implode( ', ', array_map( static fn( $v ) => '' === $v ? '"" (empty)' : $v, self::META_ALLOWED_VALUES[ $key ] ) )
+					),
+					array( 'status' => 400 )
+				);
+			}
+			return true;
+		}
+		if ( '_wp_page_template' === $key ) {
+			if ( ! is_string( $value ) || ! in_array( $value, self::page_templates(), true ) ) {
+				return new WP_Error(
+					'wproadie_invalid_value',
+					sprintf(
+						/* translators: %s: comma-separated list of templates. */
+						__( 'That page template is not offered by the active theme. Available: %s.', 'wproadie' ),
+						implode( ', ', self::page_templates() )
+					),
+					array( 'status' => 400 )
+				);
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Page template slugs this site accepts: "default", the theme's page
+	 * templates, and Elementor's when it is active.
+	 *
+	 * @return string[]
+	 */
+	public static function page_templates(): array {
+		$templates = array( 'default' );
+		foreach ( wp_get_theme()->get_page_templates( null, 'page' ) as $file => $name ) {
+			$templates[] = (string) $file;
+		}
+		if ( defined( 'ELEMENTOR_VERSION' ) ) {
+			array_push( $templates, 'elementor_header_footer', 'elementor_canvas', 'elementor_theme' );
+		}
+		return array_values( array_unique( $templates ) );
 	}
 
 	/**
