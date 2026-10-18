@@ -129,6 +129,10 @@ final class SafeUpdate {
 				}
 			}
 		);
+		if ( $results ) {
+			// Tell HQ soon, so its update counts drop now, not at the next hourly report.
+			\WPRoadie\Hq\Heartbeat::send_soon();
+		}
 		return array(
 			'results' => $results,
 			'health'  => array(
