@@ -386,6 +386,61 @@ wproadie_test(
 );
 
 wproadie_test(
+	'update-wordpress reports the offer, checks requirements, and fails cleanly when the package cannot be fetched',
+	function () {
+		$installed = get_bloginfo( 'version' );
+		$fake      = static function ( string $version, string $php = '7.4' ) {
+			return (object) array(
+				'last_checked'    => time(),
+				'version_checked' => get_bloginfo( 'version' ),
+				'updates'         => array(
+					(object) array(
+						'response'      => 'upgrade',
+						'current'       => $version,
+						'locale'        => 'en_US',
+						'php_version'   => $php,
+						'mysql_version' => '5.5',
+						'new_files'     => true,
+						'download'      => 'https://updates.example.test/wordpress-' . $version . '.zip',
+						'packages'      => (object) array(
+							'full'        => 'https://updates.example.test/wordpress-' . $version . '.zip',
+							'no_content'  => false,
+							'new_bundled' => false,
+							'partial'     => false,
+							'rollback'    => false,
+						),
+					),
+				),
+			);
+		};
+		try {
+			set_site_transient( 'update_core', $fake( '99.0.0' ) );
+			$dry = wproadie_ok( wproadie_call( 'update-wordpress', array( 'dry_run' => true ) ) );
+			wproadie_assert_same( $installed, $dry['previous_version'] );
+			wproadie_assert_same( '99.0.0', $dry['version'] );
+			wproadie_assert_same( true, $dry['requirements']['ok'] );
+
+			wproadie_assert_error( wproadie_call( 'update-wordpress', array( 'version' => '98.0.0' ) ), 'wproadie_unknown_version' );
+			wproadie_assert_error( wproadie_call( 'update-wordpress', array( 'version' => '1.0' ) ), 'wproadie_not_newer' );
+
+			set_site_transient( 'update_core', $fake( '99.0.0', '99.0' ) );
+			$needs = wproadie_call( 'update-wordpress', array( 'dry_run' => true ) );
+			wproadie_assert_error( $needs, 'wproadie_requirements_not_met' );
+			wproadie_assert( false !== strpos( $needs->get_error_message(), 'PHP 99.0' ), $needs->get_error_message() );
+
+			// The package is unreachable: WordPress keeps the old files and says so.
+			set_site_transient( 'update_core', $fake( '99.0.0' ) );
+			$failed = wproadie_call( 'update-wordpress', array() );
+			wproadie_assert_error( $failed, 'wproadie_update_failed' );
+			wproadie_assert_same( $installed, get_bloginfo( 'version' ) );
+			wproadie_assert( file_exists( ABSPATH . 'wp-settings.php' ), 'core files untouched' );
+		} finally {
+			delete_site_transient( 'update_core' );
+		}
+	}
+);
+
+wproadie_test(
 	'install-theme validates its source and fails cleanly by slug',
 	function () {
 		wproadie_assert_error( wproadie_call( 'install-theme', array() ), 'wproadie_bad_source' );

@@ -146,7 +146,7 @@ final class SiteBriefing extends AbilityBase {
 			case Mode::STAGING:
 				return 'All enabled tools are available, including files, database, WP-CLI and plugin installs.';
 			case Mode::PRODUCTION:
-				return 'This is a live site: reading, content and settings edits, and plugin or theme updates are allowed; no installs, files, database or code. Prefer drafts, and check with the person before publishing or updating.';
+				return 'This is a live site: reading, content and settings edits, and plugin, theme and WordPress updates are allowed; no installs, files, database or code. Prefer drafts, and check with the person before publishing or updating.';
 		}
 		return 'Read-only: you can look but not change anything.';
 	}
