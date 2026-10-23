@@ -50,7 +50,7 @@ final class Updater {
 	/**
 	 * Latest release, cached for six hours (one hour after a failure).
 	 *
-	 * @return array{version: string, package: string, url: string, notes: string, published: string}|null
+	 * @return array{version: string, package: string, url: string, notes: string, published: string, digest: string}|null
 	 */
 	public static function latest_release( bool $force = false ): ?array {
 		if ( ! $force ) {
@@ -80,6 +80,8 @@ final class Updater {
 							'url'       => (string) ( $data['html_url'] ?? '' ),
 							'notes'     => (string) ( $data['body'] ?? '' ),
 							'published' => (string) ( $data['published_at'] ?? '' ),
+							// "sha256:<hex>", published by GitHub for every asset.
+							'digest'    => (string) ( $asset['digest'] ?? '' ),
 						);
 						break;
 					}
@@ -180,7 +182,7 @@ final class Updater {
 		$location = (string) wp_remote_retrieve_header( $response, 'location' );
 		if ( $code >= 300 && $code < 400 && '' !== $location ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
-			return download_url( $location, 300 );
+			return self::checked( download_url( $location, 300 ), $package );
 		}
 
 		if ( 200 === $code ) {
@@ -190,7 +192,7 @@ final class Updater {
 			if ( ! $tmp || false === file_put_contents( $tmp, wp_remote_retrieve_body( $response ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 				return new WP_Error( 'wproadie_download_failed', __( 'Could not save the WPRoadie update.', 'wproadie' ) );
 			}
-			return $tmp;
+			return self::checked( $tmp, $package );
 		}
 
 		return new WP_Error(
@@ -201,6 +203,48 @@ final class Updater {
 				$code
 			)
 		);
+	}
+
+	/**
+	 * The downloaded file, if it matches the checksum GitHub published for
+	 * the release asset; otherwise it is deleted and the update stops.
+	 *
+	 * @param string|WP_Error $file    Downloaded file.
+	 * @param string          $package Asset URL it came from.
+	 * @return string|WP_Error
+	 */
+	private static function checked( $file, string $package ) {
+		if ( is_wp_error( $file ) ) {
+			return $file;
+		}
+		$release = self::latest_release();
+		$digest  = $release && $release['package'] === $package ? (string) ( $release['digest'] ?? '' ) : '';
+		$ok      = self::matches_digest( $file, $digest );
+		if ( true !== $ok ) {
+			wp_delete_file( $file );
+			return $ok;
+		}
+		return $file;
+	}
+
+	/**
+	 * Whether a file matches a GitHub asset digest ("sha256:<hex>"). No
+	 * digest (older releases) passes; any other algorithm does not.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function matches_digest( string $file, string $digest ) {
+		if ( '' === $digest ) {
+			return true;
+		}
+		if ( ! preg_match( '/^sha256:([0-9a-f]{64})$/i', $digest, $m ) ) {
+			return new WP_Error( 'wproadie_download_failed', __( 'The WPRoadie release has a checksum WPRoadie cannot check, so it was not installed.', 'wproadie' ) );
+		}
+		$actual = hash_file( 'sha256', $file );
+		if ( ! is_string( $actual ) || ! hash_equals( strtolower( $m[1] ), $actual ) ) {
+			return new WP_Error( 'wproadie_download_failed', __( 'The downloaded WPRoadie update does not match the checksum GitHub published for it, so it was not installed.', 'wproadie' ) );
+		}
+		return true;
 	}
 
 	public function clear_cache(): void {

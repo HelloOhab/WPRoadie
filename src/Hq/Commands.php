@@ -116,7 +116,7 @@ final class Commands {
 	 * @return array{result?: mixed, error?: string, message?: string, status?: int}
 	 */
 	private function run( string $command, array $args ): array {
-		$known = array( 'ping', 'heartbeat', 'list_access', 'list_tools', 'provision_credential', 'revoke_credential', 'revoke_user' );
+		$known = array( 'ping', 'heartbeat', 'list_access', 'list_tools', 'provision_credential', 'revoke_credential', 'revoke_user', 'self_update' );
 		if ( ! in_array( $command, $known, true ) ) {
 			return self::fail( 'unknown_command', __( 'Unknown command.', 'wproadie' ), 400 );
 		}
@@ -145,6 +145,9 @@ final class Commands {
 
 			case 'revoke_user':
 				return self::revoke_user( $args );
+
+			case 'self_update':
+				return SelfUpdate::run( $args );
 		}
 
 		return self::fail( 'unknown_command', __( 'Unknown command.', 'wproadie' ), 400 );
