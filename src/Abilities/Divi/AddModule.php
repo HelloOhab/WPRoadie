@@ -24,7 +24,7 @@ final class AddModule extends DiviAbility {
 	}
 
 	public function description(): string {
-		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. Returns the new element\'s path and an undo_id for undo-change. Before building or restyling a page, read the divi-build-page skill with get-skill.', 'wproadie' );
+		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. To build a whole section in one call, pass children: a tree of {type, attributes, content, width, children} (section → rows → columns → modules; a column takes width, e.g. "1_2"); it is checked and saved as one change with one undo_id. Returns the new element\'s path and an undo_id for undo-change. Before building or restyling a page, read the divi-build-page skill with get-skill (and html-to-divi when recreating an HTML design).', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -70,9 +70,20 @@ final class AddModule extends DiviAbility {
 					'maxItems'    => 6,
 					'items'       => array(
 						'type'    => 'string',
-						'pattern' => '^[1-9][0-9]?_[1-9][0-9]?$',
+						'pattern' => self::WIDTH_PATTERN,
 					),
 					'description' => __( 'For a new section or row: column widths, e.g. ["4_4"], ["1_2","1_2"], ["1_3","2_3"].', 'wproadie' ),
+				),
+				'width'      => array(
+					'type'        => 'string',
+					'pattern'     => self::WIDTH_PATTERN,
+					'description' => __( 'For a new column: its width, e.g. "1_2".', 'wproadie' ),
+				),
+				'children'   => array(
+					'type'        => 'array',
+					'maxItems'    => 100,
+					'items'       => array( 'type' => 'object' ),
+					'description' => __( 'Elements to create inside the new one, each {type, attributes, content, width, columns, children}: rows in a section, columns (with width) in a row, modules in a column. Not together with columns.', 'wproadie' ),
 				),
 			),
 			'required'             => array( 'id', 'type' ),
@@ -96,7 +107,8 @@ final class AddModule extends DiviAbility {
 		}
 
 		$sanitized = false;
-		$node      = $this->build( $doc, $container['node'], $input, $sanitized );
+		$count     = 0;
+		$node      = $this->build_tree( $doc, $container['node'], $input, 0, '', $sanitized, $count );
 		if ( is_wp_error( $node ) ) {
 			return $node;
 		}
@@ -134,6 +146,156 @@ final class AddModule extends DiviAbility {
 			$result['sanitized'] = __( 'Some HTML was removed because your account cannot save unfiltered HTML (scripts, iframes, event attributes).', 'wproadie' );
 		}
 		return $result;
+	}
+
+	const WIDTH_PATTERN = '^[1-9][0-9]?_[1-9][0-9]?$';
+
+	/** Most elements one call may create, and how deep a tree may go. */
+	const MAX_TREE_NODES = 400;
+	const MAX_TREE_DEPTH = 6;
+
+	const SPEC_KEYS = array( 'type', 'attributes', 'content', 'columns', 'width', 'children' );
+
+	/**
+	 * Builds the new element and, from its children, everything inside it.
+	 * Each child is checked against its parent as divi-add-module checks a
+	 * single insert, so a tree can only produce what single calls could.
+	 *
+	 * @param Document $doc       The page.
+	 * @param Node     $container Where the element goes.
+	 * @param array    $spec      The element: type, attributes, content, width, columns, children.
+	 * @param int      $depth     How deep in the tree.
+	 * @param string   $where     Location of $spec in the input, for errors ("" = top).
+	 * @param bool     $sanitized Set when HTML was filtered.
+	 * @param int      $count     Elements built so far.
+	 * @return Node|WP_Error
+	 */
+	private function build_tree( Document $doc, Node $container, array $spec, int $depth, string $where, bool &$sanitized, int &$count ) {
+		if ( ++$count > self::MAX_TREE_NODES ) {
+			/* translators: %d: maximum number of elements. */
+			return Divi::error( 'too_large', sprintf( __( 'One call can create at most %d elements; split the page into sections.', 'wproadie' ), self::MAX_TREE_NODES ) );
+		}
+		$problem = '' === $where ? null : $this->check_spec( $spec );
+		if ( null === $problem && isset( $spec['children'] ) ) {
+			if ( ! is_array( $spec['children'] ) || array_values( $spec['children'] ) !== $spec['children'] ) {
+				$problem = __( 'children must be a list.', 'wproadie' );
+			} elseif ( ! empty( $spec['columns'] ) && $spec['children'] ) {
+				$problem = __( 'Use columns or children, not both: give each column as a child with a width.', 'wproadie' );
+			} elseif ( $depth >= self::MAX_TREE_DEPTH && $spec['children'] ) {
+				$problem = __( 'The tree is nested too deeply.', 'wproadie' );
+			}
+		}
+		if ( null !== $problem ) {
+			return Divi::error( 'bad_children', $this->at( $where, $problem ) );
+		}
+
+		$spec = $this->apply_widths( $doc, $container, $spec );
+		$node = is_wp_error( $spec ) ? $spec : $this->build( $doc, $container, $spec, $sanitized );
+		if ( is_wp_error( $node ) ) {
+			return '' === $where ? $node : new WP_Error( $node->get_error_code(), $this->at( $where, $node->get_error_message() ), $node->get_error_data() );
+		}
+
+		foreach ( (array) ( $spec['children'] ?? array() ) as $i => $child ) {
+			$path = ( '' === $where ? '' : $where . '.' ) . 'children[' . $i . ']';
+			if ( ! is_array( $child ) ) {
+				return Divi::error( 'bad_children', $this->at( $path, __( 'Each child is an object with a type.', 'wproadie' ) ) );
+			}
+			$built = $this->build_tree( $doc, $node, $child, $depth + 1, $path, $sanitized, $count );
+			if ( is_wp_error( $built ) ) {
+				return $built;
+			}
+			$placement = $doc->check_placement( $node, $built );
+			if ( is_wp_error( $placement ) ) {
+				return new WP_Error( $placement->get_error_code(), $this->at( $path, $placement->get_error_message() ), $placement->get_error_data() );
+			}
+			$doc->insert( $node, count( $node->children() ), $built );
+		}
+		return $node;
+	}
+
+	private function at( string $where, string $message ): string {
+		return '' === $where ? $message : $where . ': ' . $message;
+	}
+
+	/**
+	 * The input schema checks the top level; children are checked here.
+	 */
+	private function check_spec( array $spec ): ?string {
+		$unknown = array_diff( array_keys( $spec ), self::SPEC_KEYS );
+		if ( $unknown ) {
+			/* translators: 1: unknown keys, 2: allowed keys. */
+			return sprintf( __( 'Unknown key %1$s; a child takes %2$s.', 'wproadie' ), implode( ', ', $unknown ), implode( ', ', self::SPEC_KEYS ) );
+		}
+		if ( ! isset( $spec['type'] ) || ! is_string( $spec['type'] ) || ! preg_match( '/^[a-z0-9_\/-]{1,100}$/', $spec['type'] ) ) {
+			return __( 'type is required: a module name such as "text" or "column".', 'wproadie' );
+		}
+		if ( isset( $spec['attributes'] ) && ! is_array( $spec['attributes'] ) ) {
+			return __( 'attributes must be an object.', 'wproadie' );
+		}
+		if ( isset( $spec['content'] ) && ! is_string( $spec['content'] ) ) {
+			return __( 'content must be text.', 'wproadie' );
+		}
+		$widths = isset( $spec['columns'] ) ? $spec['columns'] : array();
+		if ( ! is_array( $widths ) || count( $widths ) > 6 ) {
+			return __( 'columns must be a list of up to 6 widths.', 'wproadie' );
+		}
+		if ( isset( $spec['width'] ) ) {
+			$widths[] = $spec['width'];
+		}
+		foreach ( $widths as $width ) {
+			if ( ! is_string( $width ) || ! preg_match( '/' . self::WIDTH_PATTERN . '/', $width ) ) {
+				return __( 'A width looks like "1_2" or "4_4".', 'wproadie' );
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Turns a column's width into the attributes Divi stores for it, and
+	 * gives a row whose children are all sized columns its structure.
+	 *
+	 * @return array|WP_Error The spec with attributes filled in.
+	 */
+	private function apply_widths( Document $doc, Node $container, array $spec ) {
+		$attrs = isset( $spec['attributes'] ) ? (array) $spec['attributes'] : array();
+		$role  = $doc->role( $this->probe( $this->normalize_type( $doc, $container, (string) $spec['type'] ) ) );
+
+		if ( isset( $spec['width'] ) ) {
+			$width = (string) $spec['width'];
+			if ( 'column' !== $role ) {
+				return Divi::error( 'bad_width', __( 'width only applies to a column.', 'wproadie' ) );
+			}
+			if ( 5 === $doc->format ) {
+				list( $num, $den ) = array_map( 'intval', explode( '_', $width ) );
+				$attrs            += array( 'module.advanced.type.desktop.value' => $width );
+				if ( $den > 0 && 0 === ( 24 * $num ) % $den ) {
+					$attrs += array( 'module.decoration.sizing.desktop.value.flexType' => ( 24 * $num / $den ) . '_24' );
+				}
+			} else {
+				$attrs += array( 'type' => $width );
+			}
+		} elseif ( 'column' === $role && 4 === $doc->format && ! isset( $attrs['type'] ) ) {
+			return Divi::error( 'bad_width', __( 'A new column needs a width, e.g. "1_2".', 'wproadie' ) );
+		}
+
+		$children = isset( $spec['children'] ) && is_array( $spec['children'] ) ? $spec['children'] : array();
+		$widths   = array();
+		foreach ( $children as $child ) {
+			if ( is_array( $child ) && isset( $child['width'] ) && is_string( $child['width'] ) ) {
+				$widths[] = $child['width'];
+			}
+		}
+		if ( 'row' === $role && $widths && count( $widths ) === count( $children ) ) {
+			if ( 5 === $doc->format ) {
+				if ( 1 === count( array_unique( $widths ) ) && ! isset( $attrs['module'] ) ) {
+					$attrs += array( 'module.advanced.flexColumnStructure.desktop.value' => 'equal-columns_' . count( $widths ) );
+				}
+			} else {
+				$attrs += array( 'column_structure' => implode( ',', $widths ) );
+			}
+		}
+		$spec['attributes'] = $attrs;
+		return $spec;
 	}
 
 	/**

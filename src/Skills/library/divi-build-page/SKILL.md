@@ -7,7 +7,8 @@ requires: divi
 # Building a page with Divi through WPRoadie
 
 Use this whenever the target site runs Divi and the job is a new page, a new
-section, or a visual change. WPRoadie's Divi tools (`divi-get-page`,
+section, or a visual change. Recreating an HTML design? Also read
+`html-to-divi`. WPRoadie's Divi tools (`divi-get-page`,
 `divi-get-module`, `divi-add-module`, `divi-update-module`, `divi-move-module`,
 `divi-duplicate-module`, `divi-remove-module`, `divi-replace-text`,
 `divi-list-layouts`, `divi-insert-layout`, `divi-list-theme-builder`,
@@ -81,8 +82,12 @@ settings with `get-post-meta` (`_et_pb_page_layout`, `_et_pb_show_title`).
    Divi 5 attributes are dotted paths into the block's JSON
    (`module.decoration.background.desktop.value.color`). Copy the shape from
    an existing module on the same site rather than guessing.
-4. Read the page back with `divi-get-page` and compare with your plan.
-5. Publish with `update-post` `status: "publish"` only when the person asked
+4. Faster for a whole section: one `divi-add-module` call with `type:
+   "section"` and `children`, the full tree of rows, columns (each with a
+   `width` such as `"1_2"`) and modules. It is checked as a whole, saved
+   as one change and undone with one `undo_id`. Build one section per call.
+5. Read the page back with `divi-get-page` and compare with your plan.
+6. Publish with `update-post` `status: "publish"` only when the person asked
    for a published page; otherwise leave the draft and send the preview link.
 
 ## Divi 4 and Divi 5
