@@ -1189,6 +1189,148 @@ wproadie_test(
 );
 
 wproadie_test(
+	'divi-add-module builds a whole section from a tree in one change',
+	function () {
+		$pages = wproadie_divi_pages();
+		try {
+			$id     = $pages['d4'];
+			$before = wproadie_divi_content( $id );
+			$tree   = array(
+				'id'         => $id,
+				'type'       => 'section',
+				'index'      => 0,
+				'attributes' => array( 'admin_label' => 'Story' ),
+				'children'   => array(
+					array(
+						'type'     => 'row',
+						'children' => array(
+							array(
+								'type'     => 'column',
+								'width'    => '1_3',
+								'children' => array(
+									array(
+										'type'       => 'text',
+										'attributes' => array( 'text_font_size' => '120px' ),
+										'content'    => '<p>50</p>',
+									),
+								),
+							),
+							array(
+								'type'     => 'column',
+								'width'    => '2_3',
+								'children' => array(
+									array(
+										'type'    => 'text',
+										'content' => '<h2>Becoming "the" role model</h2>',
+									),
+									array(
+										'type'       => 'button',
+										'attributes' => array(
+											'button_text' => 'Read [more]',
+											'button_url'  => '/about-us/',
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+			);
+			$built  = wproadie_ok( wproadie_call( 'divi-add-module', $tree ) );
+			wproadie_assert_same( '0', $built['module']['path'] );
+			wproadie_assert_same( array( '0.0', '0.0.0', '0.0.0.0', '0.0.1', '0.0.1.0', '0.0.1.1' ), array_column( $built['children'], 'path' ) );
+			wproadie_assert_same( 'et_pb_button', $built['children'][5]['type'] );
+			wproadie_assert_same( true, $built['verification']['verified'], wp_json_encode( $built['verification'] ) );
+			wproadie_assert_same(
+				array(),
+				array_values(
+					array_filter(
+						$built['verification']['empty_structural'],
+						static function ( $path ) {
+							return 0 === strpos( $path, '0.' ) || '0' === $path;
+						}
+					)
+				)
+			);
+			$content = wproadie_divi_content( $id );
+			wproadie_assert( 0 === strpos( $content, '[et_pb_section _builder_version="4.27.4" admin_label="Story"][et_pb_row _builder_version="4.27.4" column_structure="1_3,2_3"][et_pb_column _builder_version="4.27.4" type="1_3"][et_pb_text _builder_version="4.27.4" text_font_size="120px"]<p>50</p>[/et_pb_text][/et_pb_column][et_pb_column _builder_version="4.27.4" type="2_3"]' ), substr( $content, 0, 400 ) );
+			wproadie_assert( false !== strpos( $content, 'button_text="Read %91more%93"' ), 'brackets in values are encoded' );
+			// One change: one undo removes the whole section.
+			wproadie_ok( Undo::revert( (int) $built['undo_id'] ) );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ) );
+
+			// Bad trees are refused before anything is saved, naming the spot.
+			$bad = $tree;
+			$bad['children'][0]['children'][1]['children'][0]['colour'] = 'red';
+			$error = wproadie_call( 'divi-add-module', $bad );
+			wproadie_assert_error( $error, 'wproadie_divi_bad_children' );
+			wproadie_assert( 0 === strpos( $error->get_error_message(), 'children[0].children[1].children[0]:' ), $error->get_error_message() );
+			$bad = $tree;
+			unset( $bad['children'][0]['children'][0]['width'] );
+			wproadie_assert_error( wproadie_call( 'divi-add-module', $bad ), 'wproadie_divi_bad_width' );
+			$bad                               = $tree;
+			$bad['children'][0]['children'][0] = array(
+				'type'    => 'text',
+				'content' => 'loose',
+			);
+			wproadie_assert_error( wproadie_call( 'divi-add-module', $bad ), 'wproadie_divi_bad_placement' );
+			$bad            = $tree;
+			$bad['columns'] = array( '4_4' );
+			wproadie_assert_error( wproadie_call( 'divi-add-module', $bad ), 'wproadie_divi_bad_children' );
+			$bad = $tree;
+			$bad['children'][0]['children'][0]['children'][0]['width'] = '1_2';
+			wproadie_assert_error( wproadie_call( 'divi-add-module', $bad ), 'wproadie_divi_bad_width' );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ) );
+
+			// Divi 5: columns get their flex width, equal rows their structure.
+			$d5 = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'       => $pages['d5'],
+						'type'     => 'section',
+						'children' => array(
+							array(
+								'type'     => 'row',
+								'children' => array(
+									array(
+										'type'     => 'column',
+										'width'    => '1_2',
+										'children' => array(
+											array(
+												'type'    => 'text',
+												'content' => '<p>Left</p>',
+											),
+										),
+									),
+									array(
+										'type'     => 'column',
+										'width'    => '1_2',
+										'children' => array(
+											array(
+												'type'    => 'text',
+												'content' => '<p>Right</p>',
+											),
+										),
+									),
+								),
+							),
+						),
+					)
+				)
+			);
+			wproadie_assert_same( 'divi/text', $d5['children'][4]['type'] );
+			$content = wproadie_divi_content( $pages['d5'] );
+			wproadie_assert( false !== strpos( $content, '"flexColumnStructure":{"desktop":{"value":"equal-columns_2"}}' ), 'equal row structure' );
+			wproadie_assert( false !== strpos( $content, '"flexType":"12_24"' ), 'column flex width' );
+			wproadie_assert( false !== strpos( $content, '"type":{"desktop":{"value":"1_2"}}' ), 'column legacy width' );
+		} finally {
+			wproadie_divi_cleanup( $pages );
+		}
+	}
+);
+
+wproadie_test(
 	'divi remove, move and duplicate keep everything else intact; undo restores',
 	function () {
 		$pages = wproadie_divi_pages();
