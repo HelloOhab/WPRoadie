@@ -8,8 +8,10 @@
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- Test file.
 
 use WPRoadie\Admin\Credentials;
+use WPRoadie\Admin\Updater;
 use WPRoadie\Hq\Connection;
 use WPRoadie\Hq\Heartbeat;
+use WPRoadie\Hq\SelfUpdate;
 use WPRoadie\Hq\HqIdentity;
 use WPRoadie\Hq\Signer;
 use WPRoadie\Log\AuditLog;
@@ -598,6 +600,204 @@ wproadie_test(
 			remove_filter( 'wp_is_application_passwords_available', '__return_true' );
 			require_once ABSPATH . 'wp-admin/includes/user.php';
 			wp_delete_user( $user_id );
+		}
+	}
+);
+
+/**
+ * Fakes GitHub for the Updater: the latest release is $version with one
+ * wproadie.zip asset, served from $zip. Returns the filters to remove.
+ *
+ * @param string|null $version Release tag, or null for "GitHub unreachable".
+ * @param string      $zip     Local zip to serve as the asset.
+ * @param string      $digest  The asset digest GitHub would publish.
+ */
+function hq_test_fake_release( ?string $version, string $zip = '', string $digest = '' ): array {
+	$asset = 'https://api.github.com/repos/' . Updater::repo() . '/releases/assets/42';
+	$api   = static function ( $reply, $args, $url ) use ( $version, $asset, $digest ) {
+		if ( 0 !== strpos( (string) $url, 'https://api.github.com/repos/' . Updater::repo() . '/releases/latest' ) ) {
+			return $reply;
+		}
+		if ( null === $version ) {
+			return new WP_Error( 'http_request_failed', 'unreachable' );
+		}
+		return array(
+			'headers'  => array(),
+			'body'     => wp_json_encode(
+				array(
+					'tag_name'     => 'v' . $version,
+					'html_url'     => 'https://github.com/x/releases/tag/v' . $version,
+					'body'         => 'notes',
+					'published_at' => '2026-10-23T10:00:00Z',
+					'assets'       => array(
+						array(
+							'name'   => 'wproadie.zip',
+							'url'    => $asset,
+							'digest' => $digest,
+						),
+					),
+				)
+			),
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+		);
+	};
+	// Stands in for the GitHub download, before the Updater's own handler.
+	$download = static function ( $reply, $package ) use ( $asset, $zip ) {
+		if ( $asset !== $package || '' === $zip ) {
+			return $reply;
+		}
+		$copy = trailingslashit( get_temp_dir() ) . 'wproadie-self-' . wp_generate_password( 6, false ) . '.zip';
+		copy( $zip, $copy );
+		return $copy;
+	};
+	add_filter( 'pre_http_request', $api, 10, 3 );
+	add_filter( 'upgrader_pre_download', $download, 5, 2 );
+	delete_site_transient( Updater::CACHE_KEY );
+	return array( $api, $download );
+}
+
+function hq_test_unfake_release( array $filters ): void {
+	remove_filter( 'pre_http_request', $filters[0], 10 );
+	remove_filter( 'upgrader_pre_download', $filters[1], 5 );
+	delete_site_transient( Updater::CACHE_KEY );
+}
+
+wproadie_test(
+	'self_update refuses what it should and reports when WPRoadie is current',
+	function () {
+		$command = static function ( array $args ) {
+			return hq_test_command(
+				array(
+					'command' => 'self_update',
+					'args'    => $args,
+				)
+			)->get_data();
+		};
+
+		$fake = hq_test_fake_release( null );
+		try {
+			wproadie_assert_same( 'bad_args', $command( array( 'version' => '1.0; rm' ) )['error'] );
+			wproadie_assert_same( 'no_release', $command( array() )['error'] );
+		} finally {
+			hq_test_unfake_release( $fake );
+		}
+
+		$fake = hq_test_fake_release( WPROADIE_VERSION );
+		try {
+			wproadie_assert_same( 'version_mismatch', $command( array( 'version' => '99.0.0' ) )['error'] );
+			$current = $command( array( 'version' => WPROADIE_VERSION ) );
+			wproadie_assert_same( true, $current['ok'], wp_json_encode( $current ) );
+			wproadie_assert_same( 'current', $current['result']['status'] );
+
+			Settings::set( 'disabled', true );
+			wproadie_assert_same( 'disabled', $command( array() )['error'] );
+		} finally {
+			Settings::set( 'disabled', false );
+			hq_test_unfake_release( $fake );
+		}
+
+		// The AI's tools still refuse WPRoadie.
+		$plan = wproadie_ok(
+			wproadie_call(
+				'apply-updates',
+				array(
+					'plugins' => array( plugin_basename( WPROADIE_FILE ) ),
+					'dry_run' => true,
+				)
+			)
+		);
+		wproadie_assert_same( 'protected', $plan['skipped'][0]['reason'] );
+
+		$log = AuditLog::query( array( 'ability' => 'hq/self_update' ), 1 )['rows'][0];
+		wproadie_assert( null !== $log, 'self_update is in the audit log' );
+	}
+);
+
+wproadie_test(
+	'self_update updates from the release, keeps no undo, and rolls back a broken release',
+	function () {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		// A stand-in for WPRoadie: updating the real plugin would replace
+		// the code under test.
+		$dir  = 'wproadie-self-test';
+		$file = $dir . '/wproadie-self-test.php';
+		$path = WP_PLUGIN_DIR . '/' . $dir;
+		wp_mkdir_p( $path );
+		// phpcs:disable WordPress.WP.AlternativeFunctions -- Test fixture.
+		file_put_contents( $path . '/wproadie-self-test.php', extensions_test_plugin_body( '1.0.0' ) );
+		// phpcs:enable WordPress.WP.AlternativeFunctions
+		wp_clean_plugins_cache( false );
+		$good        = extensions_test_plugin_zip( $dir, 'wproadie-self-test.php', extensions_test_plugin_body( '1.1.0' ) );
+		$broken      = extensions_test_plugin_zip( $dir, 'wproadie-self-test.php', extensions_test_plugin_body( '1.2.0', 'function (' ) );
+		$undo        = static function () {
+			global $wpdb;
+			return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wproadie_log WHERE undo_data IS NOT NULL AND undo_data <> ''" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		};
+		$undo_before = $undo();
+
+		try {
+			activate_plugin( $file );
+
+			$fake = hq_test_fake_release( '1.1.0', $good, 'sha256:' . hash_file( 'sha256', $good ) );
+			try {
+				$result = SelfUpdate::run( array( 'version' => '1.1.0' ), $file );
+			} finally {
+				hq_test_unfake_release( $fake );
+			}
+			wproadie_assert_same( 'updated', $result['result']['status'], wp_json_encode( $result ) );
+			wproadie_assert_same( '1.0.0', $result['result']['from'] );
+			wproadie_assert_same( '1.1.0', $result['result']['to'] );
+			wp_clean_plugins_cache( false );
+			wproadie_assert_same( '1.1.0', get_plugins()[ $file ]['Version'] );
+			wproadie_assert( is_plugin_active( $file ), 'still active' );
+			wproadie_assert_same( $undo_before, $undo(), 'no undo record: undo-change must not downgrade WPRoadie' );
+			wproadie_assert( false === get_transient( SelfUpdate::LOCK ), 'the lock is released' );
+
+			$fake = hq_test_fake_release( '1.2.0', $broken );
+			try {
+				$result = SelfUpdate::run( array(), $file );
+			} finally {
+				hq_test_unfake_release( $fake );
+			}
+			wproadie_assert_same( 'rolled_back', $result['result']['status'], wp_json_encode( $result ) );
+			wproadie_assert_same( '1.1.0', $result['result']['to'] );
+			wp_clean_plugins_cache( false );
+			wproadie_assert_same( '1.1.0', get_plugins()[ $file ]['Version'], 'the previous version is back' );
+
+			set_transient( SelfUpdate::LOCK, 1, 60 );
+			$fake = hq_test_fake_release( '1.3.0', $good );
+			try {
+				wproadie_assert_same( 'busy', SelfUpdate::run( array(), $file )['error'] );
+			} finally {
+				hq_test_unfake_release( $fake );
+				delete_transient( SelfUpdate::LOCK );
+			}
+		} finally {
+			deactivate_plugins( $file, true );
+			delete_plugins( array( $file ) );
+			wp_clean_plugins_cache( false );
+		}
+	}
+);
+
+wproadie_test(
+	'WPRoadie downloads must match the checksum GitHub publishes',
+	function () {
+		$file = wp_tempnam( 'digest' );
+		// phpcs:disable WordPress.WP.AlternativeFunctions -- Test fixture.
+		file_put_contents( $file, 'release bytes' );
+		// phpcs:enable WordPress.WP.AlternativeFunctions
+		try {
+			wproadie_assert_same( true, Updater::matches_digest( $file, '' ), 'older releases have no digest' );
+			wproadie_assert_same( true, Updater::matches_digest( $file, 'sha256:' . strtoupper( hash( 'sha256', 'release bytes' ) ) ) );
+			wproadie_assert_error( Updater::matches_digest( $file, 'sha256:' . hash( 'sha256', 'other bytes' ) ), 'wproadie_download_failed' );
+			wproadie_assert_error( Updater::matches_digest( $file, 'md5:abc' ), 'wproadie_download_failed' );
+		} finally {
+			wp_delete_file( $file );
 		}
 	}
 );
