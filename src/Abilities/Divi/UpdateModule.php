@@ -29,7 +29,7 @@ final class UpdateModule extends DiviAbility {
 	}
 
 	public function description(): string {
-		return __( 'Changes one Divi module (or section, row or column) found by path, admin label or CSS ID, leaving everything else on the page byte-for-byte as it was. Read it first with divi-get-module. Divi 4: set is {attribute: value} with plain values (e.g. {"button_text": "Book now", "button_url": "/contact", "admin_label": "Hero CTA"}; Divi\'s escaping of quotes and brackets is done for you; true/false become on/off), remove is a list of attribute names, content replaces the HTML between the tags (e.g. a Text module\'s body). Divi 5: set is {dotted.path: value} into the block\'s JSON (e.g. {"button.innerContent.desktop.value.text": "Book now", "content.innerContent.desktop.value": "<p>Hi</p>", "module.decoration.background.desktop.value.color": "#fff"}), values may be objects; remove is a list of dotted paths; content is shorthand for content.innerContent.desktop.value. Users without the unfiltered_html capability cannot add scripts: HTML is filtered with wp_kses_post. Elements inside a global library item are refused (edit the library item instead). Saves a revision and clears Divi\'s CSS cache. Returns the updated element and an undo_id for undo-change.', 'wproadie' );
+		return __( 'Changes one Divi module (or section, row or column) found by path, admin label or CSS ID, leaving everything else on the page byte-for-byte as it was. Read it first with divi-get-module; divi-get-module-schema lists the attribute names a module takes, and an unknown name is refused with the likely right one. Divi 4: set is {attribute: value} with plain values (e.g. {"button_text": "Book now", "button_url": "/contact", "admin_label": "Hero CTA"}; Divi\'s escaping of quotes and brackets is done for you; true/false become on/off), remove is a list of attribute names, content replaces the HTML between the tags (e.g. a Text module\'s body). Divi 5: set is {dotted.path: value} into the block\'s JSON (e.g. {"button.innerContent.desktop.value.text": "Book now", "content.innerContent.desktop.value": "<p>Hi</p>", "module.decoration.background.desktop.value.color": "#fff"}), values may be objects; remove is a list of dotted paths; content is shorthand for content.innerContent.desktop.value. Users without the unfiltered_html capability cannot add scripts: HTML is filtered with wp_kses_post. Elements inside a global library item are refused (edit the library item instead). Saves a revision and clears Divi\'s CSS cache. Returns the updated element and an undo_id for undo-change.', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -43,12 +43,12 @@ final class UpdateModule extends DiviAbility {
 				array( 'id' => self::id_property() ),
 				self::module_properties(),
 				array(
-					'set'     => array(
+					'set'                      => array(
 						'type'          => 'object',
 						'maxProperties' => 100,
 						'description'   => __( 'Attributes to set. Divi 4: name => text. Divi 5: dotted.path => any JSON value.', 'wproadie' ),
 					),
-					'remove'  => array(
+					'remove'                   => array(
 						'type'        => 'array',
 						'maxItems'    => 100,
 						'items'       => array(
@@ -57,10 +57,15 @@ final class UpdateModule extends DiviAbility {
 						),
 						'description' => __( 'Attribute names (Divi 4) or dotted paths (Divi 5) to remove, so Divi uses its default.', 'wproadie' ),
 					),
-					'content' => array(
+					'content'                  => array(
 						'type'        => 'string',
 						'maxLength'   => 500000,
 						'description' => __( 'New content: Divi 4, the HTML between the module\'s tags; Divi 5, content.innerContent.desktop.value.', 'wproadie' ),
+					),
+					'allow_unknown_attributes' => array(
+						'type'        => 'boolean',
+						'default'     => false,
+						'description' => __( 'Divi 4: store attribute names the module has no field for instead of refusing them (only for names you know an add-on reads).', 'wproadie' ),
 					),
 				)
 			),
@@ -119,6 +124,12 @@ final class UpdateModule extends DiviAbility {
 	 * @return array|WP_Error What was changed.
 	 */
 	private function apply_4( Node $node, array $set, array $remove, array $input, bool &$sanitized ) {
+		if ( $set && empty( $input['allow_unknown_attributes'] ) ) {
+			$known = $this->check_attributes_4( $node->name, $set );
+			if ( is_wp_error( $known ) ) {
+				return $known;
+			}
+		}
 		$changed = array();
 		foreach ( $set as $key => $value ) {
 			$key = (string) $key;

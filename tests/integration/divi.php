@@ -243,7 +243,7 @@ wproadie_test(
 
 			Settings::set( 'mode', Mode::READ_ONLY );
 			$names = ( new Registry() )->enabled_names();
-			foreach ( array( 'divi-list-pages', 'divi-get-page', 'divi-get-module', 'divi-list-layouts', 'divi-list-theme-builder' ) as $read ) {
+			foreach ( array( 'divi-list-pages', 'divi-get-page', 'divi-get-module', 'divi-get-module-schema', 'divi-list-layouts', 'divi-list-theme-builder' ) as $read ) {
 				wproadie_assert( in_array( 'wproadie/' . $read, $names, true ), "$read in read-only" );
 			}
 			foreach ( array( 'divi-update-module', 'divi-add-module', 'divi-remove-module', 'divi-move-module', 'divi-duplicate-module', 'divi-replace-text', 'divi-insert-layout', 'divi-clear-cache' ) as $write ) {
@@ -1945,6 +1945,317 @@ wproadie_test(
 			wproadie_assert_same( '<!-- wp:divi/placeholder /-->', wproadie_divi_content( $id ) );
 		} finally {
 			wproadie_divi_cleanup( array( $id ) );
+		}
+	}
+);
+
+/**
+ * Stand-in Divi 4 field definitions for et_pb_button, in Divi's shape.
+ */
+function wproadie_divi_button_fields(): array {
+	return array(
+		'button_text'        => array(
+			'label'           => 'Button',
+			'type'            => 'text',
+			'option_category' => 'basic_option',
+			'toggle_slug'     => 'main_content',
+			'dynamic_content' => 'text',
+			'mobile_options'  => true,
+			'hover'           => 'tabs',
+		),
+		'button_url'         => array(
+			'label'           => 'Button Link URL',
+			'type'            => 'text',
+			'toggle_slug'     => 'link',
+			'dynamic_content' => 'url',
+		),
+		'url_new_window'     => array(
+			'label'       => 'Button Link Target',
+			'type'        => 'select',
+			'options'     => array(
+				'off' => 'In The Same Window',
+				'on'  => 'In The New Tab',
+			),
+			'default'     => 'off',
+			'toggle_slug' => 'link',
+		),
+		'button_alignment'   => array(
+			'label'          => 'Button Alignment',
+			'type'           => 'text_align',
+			'options'        => array(
+				'left'   => 'Left',
+				'center' => 'Center',
+				'right'  => 'Right',
+			),
+			'tab_slug'       => 'advanced',
+			'toggle_slug'    => 'alignment',
+			'mobile_options' => true,
+		),
+		'button_bg_color'    => array(
+			'label'       => 'Button Background',
+			'type'        => 'color-alpha',
+			'tab_slug'    => 'advanced',
+			'toggle_slug' => 'button',
+			'hover'       => 'tabs',
+			'sticky'      => true,
+			'show_if'     => array( 'custom_button' => 'on' ),
+		),
+		'custom_margin'      => array(
+			'label'          => 'Margin',
+			'type'           => 'custom_margin',
+			'tab_slug'       => 'advanced',
+			'toggle_slug'    => 'margin_padding',
+			'mobile_options' => true,
+		),
+		'_builder_version'   => array( 'type' => 'skip' ),
+		'button_text_tablet' => array(
+			'type'        => 'skip',
+			'toggle_slug' => 'main_content',
+		),
+		'computed_thing'     => array( 'type' => 'computed' ),
+	);
+}
+
+wproadie_test(
+	'divi-get-module-schema describes a module from Divi\'s field definitions',
+	function () {
+		$pages  = wproadie_divi_pages();
+		$filter = static function ( $fields, $slug ) {
+			return 'et_pb_button' === $slug ? wproadie_divi_button_fields() : $fields;
+		};
+		add_filter( 'wproadie_divi4_module_fields', $filter, 10, 2 );
+		try {
+			// Without Divi running here, the catalogue cannot be loaded.
+			wproadie_assert_error( wproadie_call( 'divi-get-module-schema' ), 'wproadie_not_loaded' );
+			wproadie_assert_error( wproadie_call( 'divi-get-module-schema', array( 'module' => 'text' ) ), 'wproadie_unknown_type' );
+
+			$schema = wproadie_ok( wproadie_call( 'divi-get-module-schema', array( 'module' => 'button' ) ) );
+			wproadie_assert_same( 'et_pb_button', $schema['slug'] );
+			wproadie_assert_same(
+				array( 'general/link', 'general/main_content', 'advanced/alignment', 'advanced/button', 'advanced/margin_padding' ),
+				array_map(
+					static function ( $g ) {
+						return $g['tab'] . '/' . $g['toggle'];
+					},
+					$schema['groups']
+				)
+			);
+			$by_name = array();
+			foreach ( $schema['groups'] as $group ) {
+				foreach ( $group['fields'] as $field ) {
+					$by_name[ $field['name'] ] = $field;
+				}
+			}
+			wproadie_assert_same( 6, $schema['field_count'], 'skip and computed fields are left out' );
+			wproadie_assert_same(
+				array(
+					'name'       => 'button_text',
+					'type'       => 'text',
+					'label'      => 'Button',
+					'responsive' => true,
+					'hover'      => true,
+					'dynamic'    => 'text',
+				),
+				$by_name['button_text']
+			);
+			wproadie_assert_same( array( 'off', 'on' ), $by_name['url_new_window']['options'] );
+			wproadie_assert_same( 'off', $by_name['url_new_window']['default'] );
+			wproadie_assert_same( true, $by_name['button_bg_color']['sticky'] );
+			wproadie_assert_same( array( 'custom_button' => 'on' ), $by_name['button_bg_color']['when'] );
+			wproadie_assert( false !== strpos( $schema['conventions']['responsive'], '_last_edited' ) );
+
+			$content = wproadie_ok(
+				wproadie_call(
+					'divi-get-module-schema',
+					array(
+						'module'           => 'et_pb_button',
+						'include_advanced' => false,
+					)
+				)
+			);
+			wproadie_assert_same( 3, $content['field_count'] );
+			$search = wproadie_ok(
+				wproadie_call(
+					'divi-get-module-schema',
+					array(
+						'module' => 'button',
+						'search' => 'color',
+					)
+				)
+			);
+			wproadie_assert_same( array( 'button_bg_color' ), array_column( $search['groups'][0]['fields'], 'name' ) );
+			$toggle = wproadie_ok(
+				wproadie_call(
+					'divi-get-module-schema',
+					array(
+						'module' => 'button',
+						'toggle' => 'link',
+					)
+				)
+			);
+			wproadie_assert_same( array( 'button_url', 'url_new_window' ), array_column( $toggle['groups'][0]['fields'], 'name' ) );
+
+			// Divi 5 needs the registry this site does not have.
+			wproadie_assert_error( wproadie_call( 'divi-get-module-schema', array( 'format' => 5 ) ), 'wproadie_not_divi_5' );
+		} finally {
+			remove_filter( 'wproadie_divi4_module_fields', $filter, 10 );
+			wproadie_divi_cleanup( $pages );
+		}
+	}
+);
+
+wproadie_test(
+	'divi writes refuse attributes the module has no field for, naming the right one',
+	function () {
+		$pages  = wproadie_divi_pages();
+		$id     = $pages['d4'];
+		$filter = static function ( $fields, $slug ) {
+			return 'et_pb_button' === $slug ? wproadie_divi_button_fields() : $fields;
+		};
+		add_filter( 'wproadie_divi4_module_fields', $filter, 10, 2 );
+		try {
+			$before = wproadie_divi_content( $id );
+			$error  = wproadie_call(
+				'divi-add-module',
+				array(
+					'id'         => $id,
+					'container'  => '0.0.0',
+					'type'       => 'button',
+					'attributes' => array(
+						'button_txt'              => 'Go',
+						'button_url'              => '/go/',
+						'button_text_tablet'      => 'Go!',
+						'button_text_last_edited' => 'on|tablet',
+						'button_bg_color__hover'  => '#000',
+						'button_bg_color__sticky' => '#111',
+						'custom_margin_phone'     => '0px||0px||true|false',
+						'_module_preset'          => 'default',
+						'admin_label'             => 'CTA',
+						'module_class'            => 'cta',
+						'global_colors_info'      => '{}',
+						'button_alignement'       => 'center',
+					),
+				)
+			);
+			wproadie_assert_error( $error, 'wproadie_divi_unknown_attribute' );
+			$data = $error->get_error_data();
+			wproadie_assert_same( array( 'button_txt', 'button_alignement' ), $data['unknown'] );
+			wproadie_assert_same( 'button_text', $data['suggestions']['button_txt'] );
+			wproadie_assert_same( 'button_alignment', $data['suggestions']['button_alignement'] );
+			wproadie_assert_same( array( 'button_text' ), $data['schema']['general/main_content'] );
+			wproadie_assert( false !== strpos( $error->get_error_message(), 'button_txt → button_text' ), $error->get_error_message() );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ), 'nothing was saved' );
+
+			// Inside a tree, the message says which child.
+			$tree = wproadie_call(
+				'divi-add-module',
+				array(
+					'id'       => $id,
+					'type'     => 'section',
+					'children' => array(
+						array(
+							'type'     => 'row',
+							'children' => array(
+								array(
+									'type'     => 'column',
+									'width'    => '4_4',
+									'children' => array(
+										array(
+											'type'       => 'button',
+											'attributes' => array( 'button_txt' => 'Go' ),
+										),
+									),
+								),
+							),
+						),
+					),
+				)
+			);
+			wproadie_assert_error( $tree, 'wproadie_divi_unknown_attribute' );
+			wproadie_assert( false !== strpos( $tree->get_error_message(), 'children[0].children[0].children[0]' ), $tree->get_error_message() );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ) );
+
+			// Modules Divi's definitions do not cover (add-ons not loaded here) pass.
+			$other = wproadie_ok(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'         => $id,
+						'container'  => '0.0.0',
+						'type'       => 'text',
+						'attributes' => array( 'anything_goes' => 'x' ),
+						'content'    => '<p>x</p>',
+					)
+				)
+			);
+			wproadie_ok( \WPRoadie\Log\Undo::revert( (int) $other['undo_id'] ) );
+
+			// Update: the same check; the escape hatch stores anything.
+			$update = wproadie_call(
+				'divi-update-module',
+				array(
+					'id'   => $id,
+					'path' => '0.0.0.1',
+					'set'  => array( 'button_txt' => 'Go' ),
+				)
+			);
+			wproadie_assert_error( $update, 'wproadie_divi_unknown_attribute' );
+			$ok = wproadie_ok(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'   => $id,
+						'path' => '0.0.0.1',
+						'set'  => array(
+							'button_text__hover'         => 'Go now',
+							'button_text__hover_enabled' => 'on|hover',
+						),
+					)
+				)
+			);
+			wproadie_ok( \WPRoadie\Log\Undo::revert( (int) $ok['undo_id'] ) );
+			$forced = wproadie_ok(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'                       => $id,
+						'path'                     => '0.0.0.1',
+						'set'                      => array( 'addon_flag' => 'on' ),
+						'allow_unknown_attributes' => true,
+					)
+				)
+			);
+			wproadie_ok( \WPRoadie\Log\Undo::revert( (int) $forced['undo_id'] ) );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ) );
+
+			// The pure helpers.
+			$fields = wproadie_divi_button_fields();
+			wproadie_assert_same(
+				array(),
+				\WPRoadie\Abilities\Divi\Schema::unknown_4(
+					$fields,
+					array(
+						'button_text'       => 1,
+						'button_text_phone' => 1,
+						'_i'                => 1,
+						'disabled_on'       => 1,
+					)
+				)
+			);
+			wproadie_assert_same(
+				array( 'x_tablet', 'buttontext' ),
+				\WPRoadie\Abilities\Divi\Schema::unknown_4(
+					$fields,
+					array(
+						'x_tablet'   => 1,
+						'buttontext' => 1,
+					)
+				)
+			);
+			wproadie_assert_same( array( 'buttontext' => 'button_text' ), \WPRoadie\Abilities\Divi\Schema::suggest( $fields, array( 'buttontext', 'zzzzzzzzzzzz' ) ) );
+		} finally {
+			remove_filter( 'wproadie_divi4_module_fields', $filter, 10 );
+			wproadie_divi_cleanup( $pages );
 		}
 	}
 );

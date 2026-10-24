@@ -24,7 +24,7 @@ final class AddModule extends DiviAbility {
 	}
 
 	public function description(): string {
-		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. To build a whole section in one call, pass children: a tree of {type, attributes, content, width, children} (section → rows → columns → modules; a column takes width, e.g. "1_2"); it is checked and saved as one change with one undo_id. Returns the new element\'s path and an undo_id for undo-change. Before building or restyling a page, read the divi-build-page skill with get-skill (and html-to-divi when recreating an HTML design).', 'wproadie' );
+		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. To build a whole section in one call, pass children: a tree of {type, attributes, content, width, children} (section → rows → columns → modules; a column takes width, e.g. "1_2"); it is checked and saved as one change with one undo_id. Returns the new element\'s path and an undo_id for undo-change. Divi 4 attribute names the module has no field for are refused with the likely right name (divi-get-module-schema lists them). Before building or restyling a page, read the divi-build-page skill with get-skill (and html-to-divi when recreating an HTML design).', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -35,36 +35,36 @@ final class AddModule extends DiviAbility {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'id'         => self::id_property(),
-				'container'  => array(
+				'id'                       => self::id_property(),
+				'container'                => array(
 					'type'        => 'string',
 					'pattern'     => '^([0-9]+(\.[0-9]+)*)?$',
 					'default'     => '',
 					'description' => __( 'Path of the column (or section, row or parent module) to insert into; "" for the page itself (sections).', 'wproadie' ),
 				),
-				'index'      => array(
+				'index'                    => array(
 					'type'        => 'integer',
 					'minimum'     => 0,
 					'description' => __( 'Position among the container\'s children, 0 = first. Default: after the last.', 'wproadie' ),
 				),
-				'type'       => array(
+				'type'                     => array(
 					'type'        => 'string',
 					'pattern'     => '^[a-z0-9_/-]+$',
 					'maxLength'   => 100,
 					'description' => __( 'Module type: short ("text", "button", "section", "row") or full (et_pb_text for Divi 4, divi/text for Divi 5).', 'wproadie' ),
 				),
-				'attributes' => array(
+				'attributes'               => array(
 					'type'          => 'object',
 					'maxProperties' => 200,
 					'default'       => array(),
 					'description'   => __( 'Divi 4: attribute name => text. Divi 5: the block\'s attribute JSON (dotted keys allowed).', 'wproadie' ),
 				),
-				'content'    => array(
+				'content'                  => array(
 					'type'        => 'string',
 					'maxLength'   => 500000,
 					'description' => __( 'Divi 4: HTML between the module\'s tags. Divi 5: content.innerContent.desktop.value.', 'wproadie' ),
 				),
-				'columns'    => array(
+				'columns'                  => array(
 					'type'        => 'array',
 					'minItems'    => 1,
 					'maxItems'    => 6,
@@ -74,12 +74,17 @@ final class AddModule extends DiviAbility {
 					),
 					'description' => __( 'For a new section or row: column widths, e.g. ["4_4"], ["1_2","1_2"], ["1_3","2_3"].', 'wproadie' ),
 				),
-				'width'      => array(
+				'width'                    => array(
 					'type'        => 'string',
 					'pattern'     => self::WIDTH_PATTERN,
 					'description' => __( 'For a new column: its width, e.g. "1_2".', 'wproadie' ),
 				),
-				'children'   => array(
+				'allow_unknown_attributes' => array(
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => __( 'Divi 4: store attribute names the module has no field for instead of refusing them (only for names you know an add-on reads).', 'wproadie' ),
+				),
+				'children'                 => array(
 					'type'        => 'array',
 					'maxItems'    => 100,
 					'items'       => array( 'type' => 'object' ),
@@ -106,9 +111,10 @@ final class AddModule extends DiviAbility {
 			return $global;
 		}
 
-		$sanitized = false;
-		$count     = 0;
-		$node      = $this->build_tree( $doc, $container['node'], $input, 0, '', $sanitized, $count );
+		$sanitized           = false;
+		$count               = 0;
+		$this->allow_unknown = ! empty( $input['allow_unknown_attributes'] );
+		$node                = $this->build_tree( $doc, $container['node'], $input, 0, '', $sanitized, $count );
 		if ( is_wp_error( $node ) ) {
 			return $node;
 		}
@@ -156,6 +162,12 @@ final class AddModule extends DiviAbility {
 
 	const SPEC_KEYS = array( 'type', 'attributes', 'content', 'columns', 'width', 'children' );
 
+	/** @var bool Whether this call stores attribute names Divi has no field for. */
+	private $allow_unknown = false;
+
+	/** @var string Where in the input the element being built sits, for messages. */
+	private $where = '';
+
 	/**
 	 * Builds the new element and, from its children, everything inside it.
 	 * Each child is checked against its parent as divi-add-module checks a
@@ -189,8 +201,9 @@ final class AddModule extends DiviAbility {
 			return Divi::error( 'bad_children', $this->at( $where, $problem ) );
 		}
 
-		$spec = $this->apply_widths( $doc, $container, $spec );
-		$node = is_wp_error( $spec ) ? $spec : $this->build( $doc, $container, $spec, $sanitized );
+		$spec        = $this->apply_widths( $doc, $container, $spec );
+		$this->where = $where;
+		$node        = is_wp_error( $spec ) ? $spec : $this->build( $doc, $container, $spec, $sanitized );
 		if ( is_wp_error( $node ) ) {
 			return '' === $where ? $node : new WP_Error( $node->get_error_code(), $this->at( $where, $node->get_error_message() ), $node->get_error_data() );
 		}
@@ -490,6 +503,12 @@ final class AddModule extends DiviAbility {
 				return Divi::error( 'bad_value', sprintf( __( 'Divi 4 attribute values are text; "%s" got a list or object.', 'wproadie' ), $key ) );
 			}
 			$clean[ $key ] = Divi::clean_attr( (string) $value, $sanitized );
+		}
+		if ( empty( $this->allow_unknown ) ) {
+			$known = $this->check_attributes_4( $type, $clean, $this->where );
+			if ( is_wp_error( $known ) ) {
+				return $known;
+			}
 		}
 		$version = $doc->builder_version();
 		if ( '' !== $version && ! isset( $clean['_builder_version'] ) ) {

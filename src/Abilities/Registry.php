@@ -85,6 +85,7 @@ final class Registry {
 		Divi\ListPages::class,
 		Divi\GetPage::class,
 		Divi\GetModule::class,
+		Divi\GetModuleSchema::class,
 		Divi\UpdateModule::class,
 		Divi\AddModule::class,
 		Divi\RemoveModule::class,

@@ -9,7 +9,7 @@ requires: divi
 Use this whenever the target site runs Divi and the job is a new page, a new
 section, or a visual change. Recreating an HTML design? Also read
 `html-to-divi`. WPRoadie's Divi tools (`divi-get-page`,
-`divi-get-module`, `divi-add-module`, `divi-update-module`, `divi-move-module`,
+`divi-get-module`, `divi-get-module-schema`, `divi-add-module`, `divi-update-module`, `divi-move-module`,
 `divi-duplicate-module`, `divi-remove-module`, `divi-replace-text`,
 `divi-list-layouts`, `divi-insert-layout`, `divi-list-theme-builder`,
 `divi-clear-cache`) edit the page's stored Divi content directly, the same
@@ -23,7 +23,12 @@ content the Visual Builder saves. They work on both storage formats, Divi 4
 2. Read before you change: `divi-get-module` on the element you will touch.
    Copy its existing attributes for anything new you add next to it, so the
    new module matches the page's spacing, colours and fonts.
-3. On a live site every write waits for a person's approval in HQ. Batch your
+3. For an attribute you have not seen on the page, `divi-get-module-schema`
+   with the module's name lists every attribute it takes, with types,
+   options and the responsive and hover variants. Divi ignores attribute
+   names it does not know, so the tools refuse an unknown name and tell
+   you the likely right one; never guess a name twice.
+4. On a live site every write waits for a person's approval in HQ. Batch your
    work into few, clear calls and give each an `approval_note`.
 
 ## Hard rules
