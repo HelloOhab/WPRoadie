@@ -24,7 +24,7 @@ final class AddModule extends DiviAbility {
 	}
 
 	public function description(): string {
-		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. To build a whole section in one call, pass children: a tree of {type, attributes, content, width, children} (section → rows → columns → modules; a column takes width, e.g. "1_2"); it is checked and saved as one change with one undo_id. Returns the new element\'s path and an undo_id for undo-change. Divi 4 attribute names the module has no field for are refused with the likely right name (divi-get-module-schema lists them). Before building or restyling a page, read the divi-build-page skill with get-skill (and html-to-divi when recreating an HTML design).', 'wproadie' );
+		return __( 'Inserts a new element into a Divi page. A module (e.g. type "text", "button", "image", "blurb", "cta" or a full name like et_pb_text / divi/text) goes into a column: container is the column\'s path from divi-get-page, index its position (0 = first; default: last). A new section goes at the top level (container "" or omitted) and a new row into a section; pass columns (e.g. ["1_2","1_2"]) to create the row and empty columns inside, then add modules to them. Divi 4: attributes is {name: text} (e.g. {"button_text": "Call us", "button_url": "tel:123"}), content is the HTML between the tags (Text module body). Divi 5: attributes is the block\'s JSON (e.g. {"button": {"innerContent": {"desktop": {"value": {"text": "Call us", "linkUrl": "tel:123"}}}}}); dotted keys like "title.innerContent.desktop.value" also work; content is shorthand for content.innerContent.desktop.value. The page\'s builder version is added for you. HTML is filtered with wp_kses_post for users without unfiltered_html. To build a whole section in one call, pass children: a tree of {type, attributes, content, width, children} (section → rows → columns → modules; a column takes width, e.g. "1_2"); it is checked and saved as one change with one undo_id. Returns the new element\'s path and an undo_id for undo-change. Code modules, layout HTML inside text and inline CSS are refused unless allow_raw_html / allow_inline_css say the person asked for them. Divi 4 attribute names the module has no field for are refused with the likely right name (divi-get-module-schema lists them). Before building or restyling a page, read the divi-build-page skill with get-skill (and html-to-divi when recreating an HTML design).', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -79,6 +79,8 @@ final class AddModule extends DiviAbility {
 					'pattern'     => self::WIDTH_PATTERN,
 					'description' => __( 'For a new column: its width, e.g. "1_2".', 'wproadie' ),
 				),
+				'allow_raw_html'           => \WPRoadie\Abilities\RawHtml::flags_schema()['allow_raw_html'],
+				'allow_inline_css'         => \WPRoadie\Abilities\RawHtml::flags_schema()['allow_inline_css'],
 				'allow_unknown_attributes' => array(
 					'type'        => 'boolean',
 					'default'     => false,
@@ -114,6 +116,7 @@ final class AddModule extends DiviAbility {
 		$sanitized           = false;
 		$count               = 0;
 		$this->allow_unknown = ! empty( $input['allow_unknown_attributes'] );
+		$this->flags         = array_intersect_key( $input, \WPRoadie\Abilities\RawHtml::flags_schema() );
 		$node                = $this->build_tree( $doc, $container['node'], $input, 0, '', $sanitized, $count );
 		if ( is_wp_error( $node ) ) {
 			return $node;
@@ -167,6 +170,9 @@ final class AddModule extends DiviAbility {
 
 	/** @var string Where in the input the element being built sits, for messages. */
 	private $where = '';
+
+	/** @var array The call's allow_raw_html / allow_inline_css flags. */
+	private $flags = array();
 
 	/**
 	 * Builds the new element and, from its children, everything inside it.
@@ -322,6 +328,14 @@ final class AddModule extends DiviAbility {
 		$columns = isset( $input['columns'] ) ? array_map( 'strval', (array) $input['columns'] ) : array();
 		$role    = $doc->role( $this->probe( $type ) );
 
+		$strings = \WPRoadie\Abilities\RawHtml::strings( $attrs );
+		if ( isset( $input['content'] ) ) {
+			$strings[] = (string) $input['content'];
+		}
+		$code = \WPRoadie\Abilities\RawHtml::check( $type, $strings, \WPRoadie\Abilities\RawHtml::css_keys( array_keys( $attrs ) ), $this->flags, $this->where, 'divi_' );
+		if ( is_wp_error( $code ) ) {
+			return $code;
+		}
 		if ( $columns && ! in_array( $role, array( 'section', 'row' ), true ) ) {
 			return Divi::error( 'bad_columns', __( 'columns only applies to a new section or row.', 'wproadie' ) );
 		}

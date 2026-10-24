@@ -1205,9 +1205,10 @@ wproadie_test(
 						wproadie_call(
 							'elementor-update-element',
 							array(
-								'post_id'  => $id,
-								'id'       => '9e8d7c6',
-								'settings' => array( 'editor' => '<p>Hi<script>alert(1)</script><img src="x" onerror="alert(2)"></p>' ),
+								'post_id'        => $id,
+								'id'             => '9e8d7c6',
+								'settings'       => array( 'editor' => '<p>Hi<script>alert(1)</script><img src="x" onerror="alert(2)"></p>' ),
+								'allow_raw_html' => true,
 							)
 						)
 					);
@@ -1223,10 +1224,11 @@ wproadie_test(
 						wproadie_call(
 							'elementor-add-element',
 							array(
-								'post_id'     => $id,
-								'parent_id'   => 'a1b2c3d',
-								'widget_type' => 'html',
-								'settings'    => array( 'html' => '<script>evil()</script><b>ok</b>' ),
+								'post_id'        => $id,
+								'parent_id'      => 'a1b2c3d',
+								'widget_type'    => 'html',
+								'settings'       => array( 'html' => '<script>evil()</script><b>ok</b>' ),
+								'allow_raw_html' => true,
 							)
 						)
 					);
@@ -1255,9 +1257,10 @@ wproadie_test(
 				wproadie_call(
 					'elementor-update-element',
 					array(
-						'post_id'  => $id,
-						'id'       => '0badc0d',
-						'settings' => array( 'html' => '<script>ok()</script>' ),
+						'post_id'        => $id,
+						'id'             => '0badc0d',
+						'settings'       => array( 'html' => '<script>ok()</script>' ),
+						'allow_raw_html' => true,
 					)
 				)
 			);
@@ -1935,6 +1938,139 @@ wproadie_test(
 				)
 			);
 			wproadie_assert( ! empty( $forced['added'] ) );
+		} finally {
+			wp_delete_post( $id, true );
+		}
+	}
+);
+
+wproadie_test(
+	'elementor writes refuse an HTML widget, layout HTML and inline CSS unless asked for',
+	function () {
+		if ( ! $GLOBALS['wproadie_el_real'] ) {
+			return;
+		}
+		$id = wproadie_el_page();
+		try {
+			$before = wproadie_el_raw( $id );
+			$add    = static function ( array $extra ) use ( $id ) {
+				return wproadie_call(
+					'elementor-add-element',
+					array_merge(
+						array(
+							'post_id'   => $id,
+							'parent_id' => 'a1b2c3d',
+						),
+						$extra
+					)
+				);
+			};
+			$html   = $add(
+				array(
+					'widget_type' => 'html',
+					'settings'    => array( 'html' => '<b>x</b>' ),
+				)
+			);
+			wproadie_assert_error( $html, 'wproadie_raw_html' );
+			wproadie_assert_same( 'allow_raw_html', $html->get_error_data()['flag'] );
+
+			$layout = $add(
+				array(
+					'widget_type' => 'text-editor',
+					'settings'    => array( 'editor' => '<div class="grid"><div class="card"><p>One</p></div></div>' ),
+				)
+			);
+			wproadie_assert_error( $layout, 'wproadie_raw_html' );
+			wproadie_assert_same( array( 'div' ), $layout->get_error_data()['tags'] );
+
+			$style = $add(
+				array(
+					'widget_type' => 'heading',
+					'settings'    => array( 'title' => '<span style="color:red">Hi</span>' ),
+				)
+			);
+			wproadie_assert_error( $style, 'wproadie_inline_css' );
+			$css = $add(
+				array(
+					'widget_type' => 'heading',
+					'settings'    => array(
+						'title'      => 'Hi',
+						'custom_css' => '.x{color:red}',
+					),
+				)
+			);
+			wproadie_assert_error( $css, 'wproadie_inline_css' );
+
+			// Nested elements are checked too, with their place.
+			$nested = wproadie_call(
+				'elementor-add-element',
+				array(
+					'post_id' => $id,
+					'element' => array(
+						'elType'   => 'container',
+						'elements' => array(
+							array(
+								'elType'     => 'widget',
+								'widgetType' => 'text-editor',
+								'settings'   => array( 'editor' => '<iframe src="https://x.test"></iframe>' ),
+							),
+						),
+					),
+				)
+			);
+			wproadie_assert_error( $nested, 'wproadie_raw_html' );
+			wproadie_assert( false !== strpos( $nested->get_error_message(), 'nested element at 0' ), $nested->get_error_message() );
+			wproadie_assert_same( $before, wproadie_el_raw( $id ), 'nothing was saved' );
+
+			// Prose is fine; the flags let an asked-for snippet through.
+			$prose = $add(
+				array(
+					'widget_type' => 'text-editor',
+					'settings'    => array( 'editor' => '<h3>Hours</h3><p>Mon–Fri <strong>9–5</strong>, <a href="/contact/">call us</a>.</p><ul><li>One</li></ul>' ),
+				)
+			);
+			wproadie_ok( $prose );
+			wproadie_ok(
+				$add(
+					array(
+						'widget_type'    => 'text-editor',
+						'settings'       => array( 'editor' => '<div>ok</div>' ),
+						'allow_raw_html' => true,
+					)
+				)
+			);
+			wproadie_ok(
+				$add(
+					array(
+						'widget_type'      => 'heading',
+						'settings'         => array( 'title' => '<span style="color:red">Hi</span>' ),
+						'allow_inline_css' => true,
+					)
+				)
+			);
+
+			// Update: the same rules, only for what is being set.
+			wproadie_assert_error(
+				wproadie_call(
+					'elementor-update-element',
+					array(
+						'post_id'  => $id,
+						'id'       => 'b0a1c2e',
+						'settings' => array( 'text' => '<div>Go</div>' ),
+					)
+				),
+				'wproadie_raw_html'
+			);
+			wproadie_ok(
+				wproadie_call(
+					'elementor-update-element',
+					array(
+						'post_id'  => $id,
+						'id'       => 'b0a1c2e',
+						'settings' => array( 'text' => 'Go' ),
+					)
+				)
+			);
 		} finally {
 			wp_delete_post( $id, true );
 		}

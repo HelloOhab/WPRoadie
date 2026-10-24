@@ -897,10 +897,11 @@ wproadie_test(
 						wproadie_call(
 							'divi-update-module',
 							array(
-								'id'      => $d4,
-								'path'    => '0.0.0.0',
-								'content' => '<p onclick="x()">Hi<script>alert(1)</script></p>',
-								'set'     => array( 'admin_label' => '<img src=x onerror=alert(1)>Label' ),
+								'id'             => $d4,
+								'path'           => '0.0.0.0',
+								'content'        => '<p onclick="x()">Hi<script>alert(1)</script></p>',
+								'allow_raw_html' => true,
+								'set'            => array( 'admin_label' => '<img src=x onerror=alert(1)>Label' ),
 							)
 						)
 					);
@@ -913,9 +914,10 @@ wproadie_test(
 						wproadie_call(
 							'divi-update-module',
 							array(
-								'id'      => $d5,
-								'path'    => '0.0.0.0',
-								'content' => '<p>Ok</p><script>alert(1)</script>',
+								'id'             => $d5,
+								'path'           => '0.0.0.0',
+								'content'        => '<p>Ok</p><script>alert(1)</script>',
+								'allow_raw_html' => true,
 							)
 						)
 					);
@@ -925,10 +927,11 @@ wproadie_test(
 						wproadie_call(
 							'divi-add-module',
 							array(
-								'id'        => $d4,
-								'container' => '0.0.0',
-								'type'      => 'text',
-								'content'   => '<script>alert(2)</script><p>Added</p>',
+								'id'             => $d4,
+								'container'      => '0.0.0',
+								'type'           => 'text',
+								'content'        => '<script>alert(2)</script><p>Added</p>',
+								'allow_raw_html' => true,
 							)
 						)
 					);
@@ -2255,6 +2258,220 @@ wproadie_test(
 			wproadie_assert_same( array( 'buttontext' => 'button_text' ), \WPRoadie\Abilities\Divi\Schema::suggest( $fields, array( 'buttontext', 'zzzzzzzzzzzz' ) ) );
 		} finally {
 			remove_filter( 'wproadie_divi4_module_fields', $filter, 10 );
+			wproadie_divi_cleanup( $pages );
+		}
+	}
+);
+
+wproadie_test(
+	'divi writes refuse Code modules, layout HTML and inline CSS unless asked for',
+	function () {
+		$pages = wproadie_divi_pages();
+		$id    = $pages['d4'];
+		try {
+			$before = wproadie_divi_content( $id );
+			$add    = static function ( array $extra ) use ( $id ) {
+				return wproadie_call(
+					'divi-add-module',
+					array_merge(
+						array(
+							'id'        => $id,
+							'container' => '0.0.0',
+						),
+						$extra
+					)
+				);
+			};
+			$code   = $add(
+				array(
+					'type'    => 'code',
+					'content' => '<b>x</b>',
+				)
+			);
+			wproadie_assert_error( $code, 'wproadie_divi_raw_html' );
+			wproadie_assert_same( 'allow_raw_html', $code->get_error_data()['flag'] );
+
+			$layout = $add(
+				array(
+					'type'    => 'text',
+					'content' => '<section><div class="row"><p>One</p></div></section>',
+				)
+			);
+			wproadie_assert_error( $layout, 'wproadie_divi_raw_html' );
+			wproadie_assert_same( array( 'section', 'div' ), $layout->get_error_data()['tags'] );
+
+			wproadie_assert_error(
+				$add(
+					array(
+						'type'    => 'text',
+						'content' => '<p style="color:red">Hi</p>',
+					)
+				),
+				'wproadie_divi_inline_css'
+			);
+			wproadie_assert_error(
+				$add(
+					array(
+						'type'    => 'text',
+						'content' => '<style>.x{}</style><p>Hi</p>',
+					)
+				),
+				'wproadie_divi_inline_css'
+			);
+			wproadie_assert_error(
+				$add(
+					array(
+						'type'       => 'text',
+						'content'    => '<p>Hi</p>',
+						'attributes' => array( 'custom_css_main_element' => 'color:red;' ),
+					)
+				),
+				'wproadie_divi_inline_css'
+			);
+
+			// Inside a tree, the message says which child.
+			$tree = $add(
+				array(
+					'container' => '',
+					'type'      => 'section',
+					'children'  => array(
+						array(
+							'type'     => 'row',
+							'children' => array(
+								array(
+									'type'     => 'column',
+									'width'    => '4_4',
+									'children' => array(
+										array(
+											'type'    => 'code',
+											'content' => '<script>x()</script>',
+										),
+									),
+								),
+							),
+						),
+					),
+				)
+			);
+			wproadie_assert_error( $tree, 'wproadie_divi_raw_html' );
+			wproadie_assert( false !== strpos( $tree->get_error_message(), 'children[0].children[0].children[0]' ), $tree->get_error_message() );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ), 'nothing was saved' );
+
+			// Prose is fine; the flags let an asked-for snippet through.
+			$ok = wproadie_ok(
+				$add(
+					array(
+						'type'    => 'text',
+						'content' => '<h2>Hours</h2><p>Mon–Fri <strong>9–5</strong>, <a href="/contact/">call us</a>.</p><ul><li>One</li></ul><blockquote>Quote</blockquote>',
+					)
+				)
+			);
+			wproadie_ok( Undo::revert( (int) $ok['undo_id'] ) );
+			$ok = wproadie_ok(
+				$add(
+					array(
+						'type'           => 'code',
+						'content'        => '<script src="https://widget.test/w.js"></script>', // phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- A test embed.
+						'allow_raw_html' => true,
+					)
+				)
+			);
+			wproadie_ok( Undo::revert( (int) $ok['undo_id'] ) );
+			$ok = wproadie_ok(
+				$add(
+					array(
+						'type'             => 'text',
+						'content'          => '<p style="color:red">Hi</p>',
+						'allow_inline_css' => true,
+					)
+				)
+			);
+			wproadie_ok( Undo::revert( (int) $ok['undo_id'] ) );
+
+			// Update: the same rules for new content; an existing Code module can still be edited with the flag.
+			wproadie_assert_error(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'      => $id,
+						'path'    => '0.0.0.0',
+						'content' => '<div>x</div>',
+					)
+				),
+				'wproadie_divi_raw_html'
+			);
+			wproadie_assert_error(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'   => $id,
+						'path' => '0.0.0.0',
+						'set'  => array( 'custom_css_main_element' => 'color:red' ),
+					)
+				),
+				'wproadie_divi_inline_css'
+			);
+			wproadie_assert_error(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'      => $id,
+						'path'    => '0.0.1.1',
+						'content' => '<script>y()</script>',
+					)
+				),
+				'wproadie_divi_raw_html'
+			);
+			$ok = wproadie_ok(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'             => $id,
+						'path'           => '0.0.1.1',
+						'content'        => '<script>y()</script>',
+						'allow_raw_html' => true,
+					)
+				)
+			);
+			wproadie_ok( Undo::revert( (int) $ok['undo_id'] ) );
+			$ok = wproadie_ok(
+				wproadie_call(
+					'divi-update-module',
+					array(
+						'id'   => $id,
+						'path' => '0.0.1.1',
+						'set'  => array( 'admin_label' => 'Embed' ),
+					)
+				)
+			);
+			wproadie_ok( Undo::revert( (int) $ok['undo_id'] ) );
+			wproadie_assert_same( $before, wproadie_divi_content( $id ) );
+
+			// Divi 5 content goes through the same check.
+			wproadie_assert_error(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'        => $pages['d5'],
+						'container' => '0.0.0',
+						'type'      => 'text',
+						'content'   => '<div class="x">Hi</div>',
+					)
+				),
+				'wproadie_divi_raw_html'
+			);
+			wproadie_assert_error(
+				wproadie_call(
+					'divi-add-module',
+					array(
+						'id'        => $pages['d5'],
+						'container' => '0.0.0',
+						'type'      => 'code',
+					)
+				),
+				'wproadie_divi_raw_html'
+			);
+		} finally {
 			wproadie_divi_cleanup( $pages );
 		}
 	}
