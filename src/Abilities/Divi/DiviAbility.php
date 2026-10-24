@@ -10,6 +10,7 @@
 
 namespace WPRoadie\Abilities\Divi;
 
+use WP_Error;
 use WP_Post;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Abilities\Content\CreatePost;
@@ -94,6 +95,58 @@ abstract class DiviAbility extends AbilityBase {
 	 *                             handled as a whole (moved, removed, copied).
 	 * @return true|\WP_Error
 	 */
+	/**
+	 * Refuses Divi 4 attribute names the module would silently ignore,
+	 * naming the likely right one and the module's fields by toggle. Passes
+	 * when Divi's definitions are not loadable or the module is unknown to
+	 * them (an add-on not loaded here).
+	 *
+	 * @param string $type  Full module slug.
+	 * @param array  $attrs Attributes to check.
+	 * @param string $where Where the module is, for the message.
+	 * @return true|WP_Error
+	 */
+	protected function check_attributes_4( string $type, array $attrs, string $where = '' ) {
+		if ( ! $attrs ) {
+			return true;
+		}
+		$fields = Schema::fields_4( $type );
+		if ( null === $fields || ! $fields ) {
+			return true;
+		}
+		$unknown = Schema::unknown_4( $fields, $attrs );
+		if ( ! $unknown ) {
+			return true;
+		}
+		$suggestions = Schema::suggest( $fields, $unknown );
+		$hints       = array();
+		foreach ( $suggestions as $key => $meant ) {
+			$hints[] = sprintf( '%s → %s', $key, $meant );
+		}
+		$message = sprintf(
+			/* translators: 1: module slug, 2: comma-separated attribute names, 3: where. */
+			__( 'Divi would ignore these attributes on %1$s: %2$s%3$s.', 'wproadie' ),
+			$type,
+			implode( ', ', $unknown ),
+			'' !== $where ? ' (' . $where . ')' : ''
+		);
+		if ( $hints ) {
+			/* translators: %s: "wrong → right" pairs. */
+			$message .= ' ' . sprintf( __( 'Did you mean: %s.', 'wproadie' ), implode( '; ', $hints ) );
+		}
+		$message .= ' ' . __( 'The attributes this module takes are in the error\'s schema (names by tab/toggle); divi-get-module-schema has the details. To store the names anyway, send allow_unknown_attributes: true.', 'wproadie' );
+		return new WP_Error(
+			'wproadie_divi_unknown_attribute',
+			$message,
+			array(
+				'status'      => 400,
+				'unknown'     => $unknown,
+				'suggestions' => $suggestions,
+				'schema'      => Schema::outline_4( $fields ),
+			)
+		);
+	}
+
 	protected function check_not_global( Document $doc, array $entry, bool $allow_root = false ) {
 		if ( '' === $entry['global'] ) {
 			return true;

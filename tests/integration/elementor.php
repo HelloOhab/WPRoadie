@@ -160,7 +160,7 @@ wproadie_test(
 				wproadie_assert_same( false, $ability->is_available(), $ability->slug() );
 				wproadie_assert( false !== strpos( $ability->unavailable_reason(), 'Elementor' ), $ability->unavailable_reason() );
 			}
-			wproadie_assert_same( 14, $found );
+			wproadie_assert_same( 15, $found );
 			wproadie_assert( ! preg_grep( '#^wproadie/elementor-#', $registry->enabled_names() ), 'Unavailable tools must not be exposed.' );
 		} finally {
 			remove_filter( 'wproadie_elementor_active', $off, 99 );
@@ -175,8 +175,8 @@ wproadie_test(
 	'elementor reads work read-only, edits in production, kit changes only in staging',
 	function () {
 		$expect = array(
-			Mode::READ_ONLY  => array( 'elementor-list-pages', 'elementor-get-page', 'elementor-get-element', 'elementor-list-templates', 'elementor-get-kit' ),
-			Mode::PRODUCTION => array( 'elementor-list-pages', 'elementor-get-page', 'elementor-get-element', 'elementor-update-element', 'elementor-add-element', 'elementor-remove-element', 'elementor-move-element', 'elementor-duplicate-element', 'elementor-replace-text', 'elementor-list-templates', 'elementor-insert-template', 'elementor-get-kit', 'elementor-regenerate-css' ),
+			Mode::READ_ONLY  => array( 'elementor-list-pages', 'elementor-get-page', 'elementor-get-element', 'elementor-get-widget-schema', 'elementor-list-templates', 'elementor-get-kit' ),
+			Mode::PRODUCTION => array( 'elementor-list-pages', 'elementor-get-page', 'elementor-get-element', 'elementor-get-widget-schema', 'elementor-update-element', 'elementor-add-element', 'elementor-remove-element', 'elementor-move-element', 'elementor-duplicate-element', 'elementor-replace-text', 'elementor-list-templates', 'elementor-insert-template', 'elementor-get-kit', 'elementor-regenerate-css' ),
 		);
 		try {
 			foreach ( $expect as $mode => $slugs ) {
@@ -1762,3 +1762,181 @@ if ( ! $GLOBALS['wproadie_el_real'] ) {
 		}
 	);
 }
+
+wproadie_test(
+	'elementor-get-widget-schema lists widgets and the settings one takes',
+	function () {
+		if ( ! $GLOBALS['wproadie_el_real'] ) {
+			// Without Elementor the tool is not offered at all.
+			wproadie_assert( null === wp_get_ability( 'wproadie/elementor-get-widget-schema' ), 'not offered without Elementor' );
+			return;
+		}
+		$catalog = wproadie_ok( wproadie_call( 'elementor-get-widget-schema' ) );
+		$names   = array_column( $catalog['widgets'], 'name' );
+		wproadie_assert( in_array( 'heading', $names, true ) && in_array( 'button', $names, true ), 'core widgets listed' );
+		wproadie_assert( ! in_array( 'common', $names, true ) && ! in_array( 'common-optimized', $names, true ), 'editor plumbing hidden' );
+		wproadie_assert_same( 'elementor', $catalog['widgets'][ array_search( 'heading', $names, true ) ]['source'] );
+		wproadie_assert( in_array( 'container', $catalog['elements'], true ) );
+		wproadie_assert_same( count( $names ), $catalog['total'] );
+
+		$heading = wproadie_ok( wproadie_call( 'elementor-get-widget-schema', array( 'widget' => 'heading' ) ) );
+		wproadie_assert_same( 'widget', $heading['elType'] );
+		$all = array();
+		foreach ( $heading['sections'] as $section ) {
+			wproadie_assert( ! empty( $section['controls'] ), 'empty sections are left out' );
+			foreach ( $section['controls'] as $control ) {
+				$all[ $control['name'] ] = $control + array( 'section' => $section['id'] );
+			}
+		}
+		wproadie_assert_same( 'textarea', $all['title']['type'] );
+		wproadie_assert_same( 'section_title', $all['title']['section'] );
+		wproadie_assert_same( 'h2', $all['header_size']['default'] );
+		wproadie_assert( isset( $all['_margin'] ), 'the shared Advanced tab (margin) is included' );
+		wproadie_assert( isset( $all['typography_font_size'] ), 'group controls appear as flat keys' );
+		wproadie_assert( ! isset( $all['align_tablet'] ), 'responsive copies are left out' );
+		wproadie_assert_same( true, $all['title']['dynamic'] );
+		wproadie_assert_same( true, $all['title_color']['global'] );
+		wproadie_assert_same( count( $all ), $heading['control_count'] );
+
+		$content = wproadie_ok(
+			wproadie_call(
+				'elementor-get-widget-schema',
+				array(
+					'widget'        => 'heading',
+					'include_style' => false,
+				)
+			)
+		);
+		if ( ElementorHelper::controls_are_stripped() ) {
+			// WP-CLI runs in Elementor's optimized mode: no labels, options or tabs.
+			wproadie_assert( isset( $heading['note'] ), 'the answer says labels are missing' );
+			wproadie_assert( $content['control_count'] <= $heading['control_count'] );
+		} else {
+			wproadie_assert( $content['control_count'] < $heading['control_count'], 'content-only is smaller' );
+		}
+		$search = wproadie_ok(
+			wproadie_call(
+				'elementor-get-widget-schema',
+				array(
+					'widget' => 'heading',
+					'search' => 'color',
+				)
+			)
+		);
+		foreach ( $search['sections'] as $section ) {
+			foreach ( $section['controls'] as $control ) {
+				wproadie_assert( false !== stripos( $control['name'] . ( $control['label'] ?? '' ), 'color' ), $control['name'] );
+			}
+		}
+		$container = wproadie_ok( wproadie_call( 'elementor-get-widget-schema', array( 'element' => 'container' ) ) );
+		wproadie_assert_same( 'container', $container['elType'] );
+		wproadie_assert( $container['control_count'] > 50 );
+
+		wproadie_assert_error( wproadie_call( 'elementor-get-widget-schema', array( 'widget' => 'no-such-widget' ) ), 'wproadie_unknown_type' );
+	}
+);
+
+wproadie_test(
+	'elementor writes refuse settings the widget has no control for, naming the right key',
+	function () {
+		if ( ! $GLOBALS['wproadie_el_real'] ) {
+			return;
+		}
+		$id = wproadie_el_page();
+		try {
+			$before = wproadie_el_raw( $id );
+			$error  = wproadie_call(
+				'elementor-add-element',
+				array(
+					'post_id'     => $id,
+					'parent_id'   => 'a1b2c3d',
+					'widget_type' => 'heading',
+					'settings'    => array(
+						'title'        => 'Hello',
+						'heading_size' => 'h3',
+						'titel_color'  => '#ff0000',
+						'align_mobile' => 'center',
+						'__globals__'  => array( 'title_colour' => 'globals/colors?id=primary' ),
+					),
+				)
+			);
+			wproadie_assert_error( $error, 'wproadie_unknown_setting' );
+			$data = $error->get_error_data();
+			wproadie_assert_same( array( 'heading_size', 'titel_color', '__globals__.title_colour' ), $data['unknown'] );
+			wproadie_assert_same( 'header_size', $data['suggestions']['heading_size'] );
+			wproadie_assert_same( 'title_color', $data['suggestions']['titel_color'] );
+			wproadie_assert( in_array( 'title', $data['schema']['section_title'], true ), 'the schema names the controls by section' );
+			wproadie_assert( false !== strpos( $error->get_error_message(), 'heading_size → header_size' ), $error->get_error_message() );
+			wproadie_assert_same( $before, wproadie_el_raw( $id ), 'nothing was saved' );
+
+			// Nested elements are checked too, and the message says where.
+			$nested = wproadie_call(
+				'elementor-add-element',
+				array(
+					'post_id' => $id,
+					'element' => array(
+						'elType'   => 'container',
+						'elements' => array(
+							array(
+								'elType'     => 'widget',
+								'widgetType' => 'button',
+								'settings'   => array( 'button_text' => 'Go' ),
+							),
+						),
+					),
+				)
+			);
+			wproadie_assert_error( $nested, 'wproadie_unknown_setting' );
+			wproadie_assert( false !== strpos( $nested->get_error_message(), 'nested element at 0' ), $nested->get_error_message() );
+
+			// Update: the same check, only on the keys being set.
+			$update = wproadie_call(
+				'elementor-update-element',
+				array(
+					'post_id'  => $id,
+					'id'       => 'b0a1c2e',
+					'settings' => array( 'txt' => 'Go' ),
+				)
+			);
+			wproadie_assert_error( $update, 'wproadie_unknown_setting' );
+			wproadie_assert_same( 'text', $update->get_error_data()['suggestions']['txt'] );
+
+			// Known keys, responsive copies and globals pass; the escape hatch stores anything.
+			wproadie_ok(
+				wproadie_call(
+					'elementor-add-element',
+					array(
+						'post_id'     => $id,
+						'parent_id'   => 'a1b2c3d',
+						'widget_type' => 'heading',
+						'settings'    => array(
+							'title'          => 'Hello',
+							'header_size'    => 'h3',
+							'align_mobile'   => 'center',
+							'_margin_tablet' => array( 'top' => '0' ),
+							'__globals__'    => array( 'title_color' => 'globals/colors?id=primary' ),
+						),
+					)
+				)
+			);
+			$forced = wproadie_ok(
+				wproadie_call(
+					'elementor-add-element',
+					array(
+						'post_id'                => $id,
+						'parent_id'              => 'a1b2c3d',
+						'widget_type'            => 'heading',
+						'settings'               => array(
+							'title'     => 'Hello',
+							'addon_key' => 'x',
+						),
+						'allow_unknown_settings' => true,
+					)
+				)
+			);
+			wproadie_assert( ! empty( $forced['added'] ) );
+		} finally {
+			wp_delete_post( $id, true );
+		}
+	}
+);

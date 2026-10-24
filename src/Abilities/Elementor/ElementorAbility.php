@@ -153,6 +153,83 @@ abstract class ElementorAbility extends AbilityBase {
 	}
 
 	/**
+	 * Refuses settings keys Elementor would silently ignore on this
+	 * element type, naming the likely right key and the controls the type
+	 * does take, so the next try is right. Passes when Elementor is not
+	 * loaded or does not know the type (check_types reports that).
+	 *
+	 * @param array  $element  Normalized element (elType, widgetType, settings).
+	 * @param string $where    Where the element is, for the message ("" for the element itself).
+	 * @return true|WP_Error
+	 */
+	protected function check_settings( array $element, string $where = '' ) {
+		$el_type  = (string) ( $element['elType'] ?? '' );
+		$widget   = (string) ( $element['widgetType'] ?? '' );
+		$settings = isset( $element['settings'] ) && is_array( $element['settings'] ) ? $element['settings'] : array();
+		if ( ! $settings ) {
+			return true;
+		}
+		$controls = ElementorHelper::all_controls( $el_type, $widget );
+		$unknown  = ElementorHelper::unknown_settings( $controls, $settings );
+		if ( ! $unknown ) {
+			return true;
+		}
+		$label       = 'widget' === $el_type ? sprintf( 'widget "%s"', $widget ) : $el_type;
+		$suggestions = ElementorHelper::suggestions( $controls, $unknown );
+		$hints       = array();
+		foreach ( $suggestions as $key => $meant ) {
+			$hints[] = sprintf( '%s → %s', $key, $meant );
+		}
+		$message = sprintf(
+			/* translators: 1: element description, 2: comma-separated keys, 3: where. */
+			__( 'Elementor would ignore these settings on %1$s: %2$s%3$s.', 'wproadie' ),
+			$label,
+			implode( ', ', $unknown ),
+			'' !== $where ? ' (' . $where . ')' : ''
+		);
+		if ( $hints ) {
+			/* translators: %s: "wrong → right" pairs. */
+			$message .= ' ' . sprintf( __( 'Did you mean: %s.', 'wproadie' ), implode( '; ', $hints ) );
+		}
+		$message .= ' ' . __( 'The settings this type takes are in the error\'s schema (names by panel section); elementor-get-widget-schema has the details. To store the keys anyway, send allow_unknown_settings: true.', 'wproadie' );
+
+		$schema = array();
+		foreach ( ElementorHelper::sections( $controls ) as $section ) {
+			$schema[ $section['id'] ] = array_column( $section['controls'], 'name' );
+		}
+		return new WP_Error(
+			'wproadie_unknown_setting',
+			$message,
+			array(
+				'status'      => 400,
+				'unknown'     => $unknown,
+				'suggestions' => $suggestions,
+				'schema'      => $schema,
+			)
+		);
+	}
+
+	/**
+	 * Runs check_settings() on an element and everything inside it.
+	 *
+	 * @return true|WP_Error
+	 */
+	protected function check_settings_tree( array $element ) {
+		$problem = true;
+		Tree::walk(
+			array( $element ),
+			function ( $el, $path ) use ( &$problem ) {
+				if ( true !== $problem ) {
+					return;
+				}
+				$where   = count( $path ) > 1 ? sprintf( 'nested element at %s', implode( '.', array_slice( $path, 1 ) ) ) : '';
+				$problem = $this->check_settings( $el, $where );
+			}
+		);
+		return $problem;
+	}
+
+	/**
 	 * Inserts new elements (already given fresh IDs and sanitized) and
 	 * saves the page.
 	 *

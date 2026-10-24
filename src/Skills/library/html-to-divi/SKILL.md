@@ -35,9 +35,11 @@ its hard rules apply here (no raw-HTML layouts, no custom CSS).
 
 - `divi-get-page` on the site's home page and `divi-get-module` on a
   heading, a text and a button there: copy their attribute names and
-  formats. Divi ignores attribute names it does not know, without any
-  error, so a name you guessed can silently do nothing. When unsure,
-  read an existing module that has that setting.
+  formats. For any setting you have not seen on the page,
+  `divi-get-module-schema` lists the attributes the module takes (use
+  `search` for "color", "padding", "font"). Divi ignores attribute names
+  it does not know, so an unknown name is refused on write with the
+  likely right one.
 - Images: find each one in the media library with `list-media`
   (search by file name). Use the site's own copy. If an image is not
   there, `upload-media-from-url` brings it in (staging sites), then use
