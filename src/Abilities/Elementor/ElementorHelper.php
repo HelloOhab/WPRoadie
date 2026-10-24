@@ -517,6 +517,131 @@ final class ElementorHelper {
 	}
 
 	/**
+	 * Whether Elementor is in its "optimized controls" mode, where control
+	 * definitions carry no labels or option lists (front end and WP-CLI;
+	 * never REST requests, which is what the MCP server handles).
+	 */
+	public static function controls_are_stripped(): bool {
+		try {
+			return class_exists( '\Elementor\Core\Frontend\Performance' ) && method_exists( '\Elementor\Core\Frontend\Performance', 'should_optimize_controls' )
+				&& (bool) \Elementor\Core\Frontend\Performance::should_optimize_controls();
+		} catch ( Throwable $e ) {
+			return false;
+		}
+	}
+
+	/** Responsive suffixes Elementor appends to a control's name. */
+	const RESPONSIVE_SUFFIX = '/_(widescreen|laptop|tablet_extra|tablet|mobile_extra|mobile)$/';
+
+	/** Setting keys Elementor stores that are not controls. */
+	const RESERVED_SETTINGS = array( '__globals__', '__dynamic__', '_skin', '_title', '_element_id', '_css_classes' );
+
+	/** Control types that only shape the editor's panel. */
+	const PANEL_CONTROL_TYPES = array( 'section', 'tabs', 'tab', 'heading', 'divider', 'raw_html', 'deprecated_notice', 'alert', 'notice', 'button', 'hidden', 'popover_toggle' );
+
+	/**
+	 * The element type object for an element: a widget type for widgets,
+	 * an element type (container, section, column) otherwise.
+	 *
+	 * @return object|null
+	 */
+	public static function type_of( string $el_type, string $widget_type ) {
+		if ( ! self::is_loaded() ) {
+			return null;
+		}
+		return 'widget' === $el_type ? self::widget_type( $widget_type ) : self::element_type( $el_type );
+	}
+
+	/**
+	 * Every control an element type understands, name => definition, as
+	 * Elementor's editor sees it: its own controls, its style controls
+	 * (kept apart from the rest outside the editor), and for widgets the
+	 * shared Advanced tab (margin, padding, background, border, motion...).
+	 *
+	 * @return array<string, array>
+	 */
+	public static function all_controls( string $el_type, string $widget_type ): array {
+		$type = self::type_of( $el_type, $widget_type );
+		if ( ! $type || ! method_exists( $type, 'get_stack' ) ) {
+			return array();
+		}
+		try {
+			$stack    = (array) $type->get_stack();
+			$controls = (array) ( $stack['controls'] ?? array() ) + (array) ( $stack['style_controls'] ?? array() );
+			if ( 'widget' === $el_type && method_exists( $type, 'has_widget_inner_wrapper' ) ) {
+				// get_stack() merges the common widget's controls but not its
+				// style controls; those hold _margin, _padding, _background_*.
+				$common = self::widget_type( $type->has_widget_inner_wrapper() ? 'common' : 'common-optimized' );
+				if ( $common && method_exists( $common, 'get_stack' ) ) {
+					$common_stack = (array) $common->get_stack( false );
+					$controls    += (array) ( $common_stack['controls'] ?? array() ) + (array) ( $common_stack['style_controls'] ?? array() );
+				}
+			}
+		} catch ( Throwable $e ) {
+			return array();
+		}
+		return array_filter(
+			$controls,
+			static function ( $control ) {
+				return is_array( $control );
+			}
+		);
+	}
+
+	/**
+	 * A control definition reduced to what the AI needs to set it.
+	 */
+	public static function compact_control( string $name, array $control ): array {
+		$item = array(
+			'name' => $name,
+			'type' => (string) ( $control['type'] ?? '' ),
+		);
+		if ( ! empty( $control['label'] ) && is_string( $control['label'] ) ) {
+			$item['label'] = wp_strip_all_tags( $control['label'] );
+		}
+		if ( isset( $control['default'] ) && '' !== $control['default'] && array() !== $control['default'] ) {
+			$json = wp_json_encode( $control['default'] );
+			if ( false !== $json && strlen( $json ) <= 200 ) {
+				$item['default'] = $control['default'];
+			}
+		}
+		if ( ! empty( $control['options'] ) && is_array( $control['options'] ) && count( $control['options'] ) <= 40 ) {
+			$item['options'] = array_map( 'strval', array_keys( $control['options'] ) );
+		}
+		if ( ! empty( $control['return_value'] ) && is_scalar( $control['return_value'] ) ) {
+			$item['on_value'] = $control['return_value'];
+		}
+		if ( ! empty( $control['size_units'] ) && is_array( $control['size_units'] ) ) {
+			$item['units'] = array_values( array_map( 'strval', $control['size_units'] ) );
+		}
+		if ( ! empty( $control['responsive'] ) || ! empty( $control['is_responsive'] ) ) {
+			$item['responsive'] = true;
+		}
+		if ( ! empty( $control['global'] ) ) {
+			$item['global'] = true;
+		}
+		if ( ! empty( $control['dynamic']['active'] ) ) {
+			$item['dynamic'] = true;
+		}
+		if ( ! empty( $control['condition'] ) && is_array( $control['condition'] ) ) {
+			$json = wp_json_encode( $control['condition'] );
+			if ( false !== $json && strlen( $json ) <= 120 ) {
+				$item['when'] = $control['condition'];
+			}
+		}
+		if ( 'repeater' === $item['type'] && ! empty( $control['fields'] ) && is_array( $control['fields'] ) ) {
+			$fields = array();
+			foreach ( $control['fields'] as $field_name => $field ) {
+				if ( is_array( $field ) && ! in_array( $field['type'] ?? '', self::PANEL_CONTROL_TYPES, true ) ) {
+					$fields[] = self::compact_control( (string) $field_name, $field );
+				}
+			}
+			$item['fields'] = $fields;
+		}
+		return $item;
+	}
+
+	/**
 	 * A compact list of a widget's (or element's) controls: the settings
 	 * keys it understands, with type, label, default and options. Skips
 	 * layout-only controls and responsive copies (_tablet, _mobile …).
@@ -527,52 +652,135 @@ final class ElementorHelper {
 	 * @return array[]
 	 */
 	public static function controls( string $el_type, string $widget_type, int $limit = 200 ): array {
-		if ( ! self::is_loaded() ) {
-			return array();
-		}
-		$type = 'widget' === $el_type ? self::widget_type( $widget_type ) : self::element_type( $el_type );
-		if ( ! $type || ! method_exists( $type, 'get_controls' ) ) {
-			return array();
-		}
-		try {
-			$controls = (array) $type->get_controls();
-		} catch ( Throwable $e ) {
-			return array();
-		}
-		$skip_types = array( 'section', 'tabs', 'tab', 'heading', 'divider', 'raw_html', 'deprecated_notice', 'alert', 'notice', 'button', 'hidden' );
-		$out        = array();
-		foreach ( $controls as $name => $control ) {
-			if ( ! is_array( $control ) || in_array( $control['type'] ?? '', $skip_types, true ) ) {
+		$out = array();
+		foreach ( self::all_controls( $el_type, $widget_type ) as $name => $control ) {
+			if ( in_array( $control['type'] ?? '', self::PANEL_CONTROL_TYPES, true ) || preg_match( self::RESPONSIVE_SUFFIX, (string) $name ) ) {
 				continue;
 			}
-			if ( preg_match( '/_(tablet|mobile|laptop|widescreen|tablet_extra|mobile_extra)$/', (string) $name ) ) {
-				continue;
-			}
-			$item = array(
-				'name' => (string) $name,
-				'type' => (string) ( $control['type'] ?? '' ),
-			);
-			if ( ! empty( $control['label'] ) && is_string( $control['label'] ) ) {
-				$item['label'] = wp_strip_all_tags( $control['label'] );
-			}
+			$item = self::compact_control( (string) $name, $control );
 			if ( ! empty( $control['tab'] ) && 'content' !== $control['tab'] ) {
 				$item['tab'] = (string) $control['tab'];
-			}
-			if ( isset( $control['default'] ) && '' !== $control['default'] && array() !== $control['default'] ) {
-				$json = wp_json_encode( $control['default'] );
-				if ( false !== $json && strlen( $json ) <= 200 ) {
-					$item['default'] = $control['default'];
-				}
-			}
-			if ( ! empty( $control['options'] ) && is_array( $control['options'] ) && count( $control['options'] ) <= 30 ) {
-				$item['options'] = array_map( 'strval', array_keys( $control['options'] ) );
-			}
-			if ( ! empty( $control['responsive'] ) ) {
-				$item['responsive'] = true;
 			}
 			$out[] = $item;
 			if ( count( $out ) >= $limit ) {
 				break;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The controls grouped by the panel section they sit in, in panel order.
+	 *
+	 * @param array<string, array> $controls From all_controls().
+	 * @return array[] Each: id, label, tab, controls (compact).
+	 */
+	public static function sections( array $controls ): array {
+		$sections = array();
+		$order    = array();
+		foreach ( $controls as $name => $control ) {
+			$name = (string) $name;
+			$type = (string) ( $control['type'] ?? '' );
+			if ( 'section' === $type ) {
+				$order[ $name ] = array(
+					'id'       => $name,
+					'label'    => wp_strip_all_tags( (string) ( $control['label'] ?? '' ) ),
+					'tab'      => (string) ( $control['tab'] ?? 'content' ),
+					'controls' => array(),
+				);
+				continue;
+			}
+			if ( in_array( $type, self::PANEL_CONTROL_TYPES, true ) || preg_match( self::RESPONSIVE_SUFFIX, $name ) ) {
+				continue;
+			}
+			$section = (string) ( $control['section'] ?? '' );
+			if ( ! isset( $order[ $section ] ) ) {
+				$order[ $section ] = array(
+					'id'       => $section,
+					'label'    => '',
+					'tab'      => (string) ( $control['tab'] ?? 'content' ),
+					'controls' => array(),
+				);
+			}
+			$order[ $section ]['controls'][] = self::compact_control( $name, $control );
+		}
+		foreach ( $order as $section ) {
+			if ( $section['controls'] ) {
+				$sections[] = $section;
+			}
+		}
+		return $sections;
+	}
+
+	/**
+	 * Setting keys Elementor would ignore on this element type: not a
+	 * control, not a responsive copy of one, not a reserved key. Keys
+	 * inside __globals__ and __dynamic__ are checked the same way.
+	 *
+	 * @param array<string, array> $controls From all_controls(); empty means "cannot tell".
+	 * @param array                $settings Settings to check.
+	 * @return string[] Unknown keys, in the order sent ("__globals__.title_color" for nested ones).
+	 */
+	public static function unknown_settings( array $controls, array $settings ): array {
+		if ( ! $controls ) {
+			return array();
+		}
+		$unknown = array();
+		foreach ( $settings as $key => $value ) {
+			$key = (string) $key;
+			if ( in_array( $key, array( '__globals__', '__dynamic__' ), true ) ) {
+				foreach ( is_array( $value ) ? $value : array() as $inner => $v ) {
+					if ( ! self::is_known_setting( $controls, (string) $inner ) ) {
+						$unknown[] = $key . '.' . $inner;
+					}
+				}
+				continue;
+			}
+			if ( ! self::is_known_setting( $controls, $key ) ) {
+				$unknown[] = $key;
+			}
+		}
+		return $unknown;
+	}
+
+	private static function is_known_setting( array $controls, string $key ): bool {
+		if ( in_array( $key, self::RESERVED_SETTINGS, true ) || isset( $controls[ $key ] ) ) {
+			return true;
+		}
+		$base = preg_replace( self::RESPONSIVE_SUFFIX, '', $key );
+		return $base !== $key && isset( $controls[ $base ] );
+	}
+
+	/**
+	 * For each unknown key, the known control name it most likely meant,
+	 * when one is close enough.
+	 *
+	 * @param array<string, array> $controls From all_controls().
+	 * @param string[]             $unknown  Unknown keys.
+	 * @return array<string, string>
+	 */
+	public static function suggestions( array $controls, array $unknown ): array {
+		$names = array();
+		foreach ( array_keys( $controls ) as $name ) {
+			$name = (string) $name;
+			if ( ! in_array( $controls[ $name ]['type'] ?? '', self::PANEL_CONTROL_TYPES, true ) && ! preg_match( self::RESPONSIVE_SUFFIX, $name ) ) {
+				$names[] = $name;
+			}
+		}
+		$out = array();
+		foreach ( $unknown as $key ) {
+			$probe = preg_replace( '/^__(globals|dynamic)__\./', '', $key );
+			$best  = null;
+			$score = PHP_INT_MAX;
+			foreach ( $names as $name ) {
+				$distance = levenshtein( substr( $probe, 0, 255 ), substr( $name, 0, 255 ) );
+				if ( $distance < $score ) {
+					$score = $distance;
+					$best  = $name;
+				}
+			}
+			if ( null !== $best && $score <= max( 3, (int) ( strlen( $probe ) / 3 ) ) ) {
+				$out[ $key ] = $best;
 			}
 		}
 		return $out;

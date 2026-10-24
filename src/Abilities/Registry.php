@@ -68,6 +68,7 @@ final class Registry {
 		Elementor\ListPages::class,
 		Elementor\GetPage::class,
 		Elementor\GetElement::class,
+		Elementor\GetWidgetSchema::class,
 		Elementor\UpdateElement::class,
 		Elementor\AddElement::class,
 		Elementor\RemoveElement::class,

@@ -23,7 +23,7 @@ final class UpdateElement extends ElementorAbility {
 	}
 
 	public function description(): string {
-		return __( 'Changes settings of one element on an Elementor page, e.g. a heading\'s text, a button\'s link, an image, a color or spacing. Send only the keys to change in settings: each key is set, null removes a key (back to the widget default), objects merge into the current value (so {"link": {"url": "https://…"}} keeps the link\'s other options) and lists such as icon_list items are replaced whole (send the full list). Everything else on the page is left exactly as it was. Use elementor-get-element first to see the current settings (and include_controls for valid keys). Returns the element\'s new summary and settings, plus an undo_id; pass it to undo-change to restore the previous version.', 'wproadie' );
+		return __( 'Changes settings of one element on an Elementor page, e.g. a heading\'s text, a button\'s link, an image, a color or spacing. Send only the keys to change in settings: each key is set, null removes a key (back to the widget default), objects merge into the current value (so {"link": {"url": "https://…"}} keeps the link\'s other options) and lists such as icon_list items are replaced whole (send the full list). Everything else on the page is left exactly as it was. Use elementor-get-element first to see the current settings, and elementor-get-widget-schema for the keys the widget takes: a key Elementor has no control for is refused, with the likely right key. Returns the element\'s new summary and settings, plus an undo_id; pass it to undo-change to restore the previous version.', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -34,12 +34,17 @@ final class UpdateElement extends ElementorAbility {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'post_id'  => self::post_id_schema(),
-				'id'       => self::element_id_schema( __( 'Element id from elementor-get-page.', 'wproadie' ) ),
-				'settings' => array(
+				'post_id'                => self::post_id_schema(),
+				'id'                     => self::element_id_schema( __( 'Element id from elementor-get-page.', 'wproadie' ) ),
+				'settings'               => array(
 					'type'          => 'object',
 					'minProperties' => 1,
 					'description'   => __( 'Settings to change, e.g. {"title": "New heading"} or {"text": "Book now", "link": {"url": "https://example.com/book"}}. null removes a key.', 'wproadie' ),
+				),
+				'allow_unknown_settings' => array(
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => __( 'Store settings keys Elementor has no control for instead of refusing them (only for keys you know a plugin reads).', 'wproadie' ),
 				),
 			),
 			'required'             => array( 'post_id', 'id', 'settings' ),
@@ -66,7 +71,14 @@ final class UpdateElement extends ElementorAbility {
 		}
 		$element  = $found['element'];
 		$settings = isset( $element['settings'] ) && is_array( $element['settings'] ) ? $element['settings'] : array();
-		$merged   = Tree::merge_settings( $settings, ElementorHelper::sanitize( $changes ) );
+		if ( empty( $input['allow_unknown_settings'] ) ) {
+			// Only the keys being set: a key already stored stays whatever it is.
+			$known = $this->check_settings( array_merge( $element, array( 'settings' => array_diff_key( $changes, $settings ) ) ) );
+			if ( is_wp_error( $known ) ) {
+				return $known;
+			}
+		}
+		$merged = Tree::merge_settings( $settings, ElementorHelper::sanitize( $changes ) );
 
 		if ( $merged === $settings ) {
 			$result            = Tree::node( $element, $found['path'] );
