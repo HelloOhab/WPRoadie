@@ -29,7 +29,7 @@ final class UpdateModule extends DiviAbility {
 	}
 
 	public function description(): string {
-		return __( 'Changes one Divi module (or section, row or column) found by path, admin label or CSS ID, leaving everything else on the page byte-for-byte as it was. Read it first with divi-get-module; divi-get-module-schema lists the attribute names a module takes, and an unknown name is refused with the likely right one. Divi 4: set is {attribute: value} with plain values (e.g. {"button_text": "Book now", "button_url": "/contact", "admin_label": "Hero CTA"}; Divi\'s escaping of quotes and brackets is done for you; true/false become on/off), remove is a list of attribute names, content replaces the HTML between the tags (e.g. a Text module\'s body). Divi 5: set is {dotted.path: value} into the block\'s JSON (e.g. {"button.innerContent.desktop.value.text": "Book now", "content.innerContent.desktop.value": "<p>Hi</p>", "module.decoration.background.desktop.value.color": "#fff"}), values may be objects; remove is a list of dotted paths; content is shorthand for content.innerContent.desktop.value. Users without the unfiltered_html capability cannot add scripts: HTML is filtered with wp_kses_post. Elements inside a global library item are refused (edit the library item instead). Saves a revision and clears Divi\'s CSS cache. Returns the updated element and an undo_id for undo-change.', 'wproadie' );
+		return __( 'Changes one Divi module (or section, row or column) found by path, admin label or CSS ID, leaving everything else on the page byte-for-byte as it was. Read it first with divi-get-module; divi-get-module-schema lists the attribute names a module takes, and an unknown name is refused with the likely right one. Divi 4: set is {attribute: value} with plain values (e.g. {"button_text": "Book now", "button_url": "/contact", "admin_label": "Hero CTA"}; Divi\'s escaping of quotes and brackets is done for you; true/false become on/off), remove is a list of attribute names, content replaces the HTML between the tags (e.g. a Text module\'s body). Divi 5: set is {dotted.path: value} into the block\'s JSON (e.g. {"button.innerContent.desktop.value.text": "Book now", "content.innerContent.desktop.value": "<p>Hi</p>", "module.decoration.background.desktop.value.color": "#fff"}), values may be objects; remove is a list of dotted paths; content is shorthand for content.innerContent.desktop.value. Layout HTML inside text, custom CSS and inline styles are refused unless allow_raw_html / allow_inline_css say the person asked for them. Users without the unfiltered_html capability cannot add scripts: HTML is filtered with wp_kses_post. Elements inside a global library item are refused (edit the library item instead). Saves a revision and clears Divi\'s CSS cache. Returns the updated element and an undo_id for undo-change.', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -62,6 +62,8 @@ final class UpdateModule extends DiviAbility {
 						'maxLength'   => 500000,
 						'description' => __( 'New content: Divi 4, the HTML between the module\'s tags; Divi 5, content.innerContent.desktop.value.', 'wproadie' ),
 					),
+					'allow_raw_html'           => \WPRoadie\Abilities\RawHtml::flags_schema()['allow_raw_html'],
+					'allow_inline_css'         => \WPRoadie\Abilities\RawHtml::flags_schema()['allow_inline_css'],
 					'allow_unknown_attributes' => array(
 						'type'        => 'boolean',
 						'default'     => false,
@@ -97,7 +99,17 @@ final class UpdateModule extends DiviAbility {
 
 		$node      = $entry['node'];
 		$sanitized = false;
-		$applied   = 5 === $doc->format
+		$strings   = \WPRoadie\Abilities\RawHtml::strings( $set );
+		if ( array_key_exists( 'content', $input ) ) {
+			$strings[] = (string) $input['content'];
+		}
+		// An existing Code module keeps its settings editable; new code in it, and new CSS anywhere, need the flags.
+		$is_code = in_array( strtolower( $node->name ), \WPRoadie\Abilities\RawHtml::CODE_MODULES, true );
+		$code    = \WPRoadie\Abilities\RawHtml::check( $is_code && ! array_key_exists( 'content', $input ) ? 'et_pb_text' : $node->name, $strings, \WPRoadie\Abilities\RawHtml::css_keys( array_keys( $set ) ), $input, '', 'divi_' );
+		if ( is_wp_error( $code ) ) {
+			return $code;
+		}
+		$applied = 5 === $doc->format
 			? $this->apply_5( $node, $set, $remove, $input, $sanitized )
 			: $this->apply_4( $node, $set, $remove, $input, $sanitized );
 		if ( is_wp_error( $applied ) ) {

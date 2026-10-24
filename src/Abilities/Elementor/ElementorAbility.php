@@ -13,6 +13,7 @@ namespace WPRoadie\Abilities\Elementor;
 use WP_Error;
 use WP_Post;
 use WPRoadie\Abilities\AbilityBase;
+use WPRoadie\Abilities\RawHtml;
 use WPRoadie\Log\Undo;
 
 defined( 'ABSPATH' ) || exit;
@@ -207,6 +208,38 @@ abstract class ElementorAbility extends AbilityBase {
 				'schema'      => $schema,
 			)
 		);
+	}
+
+	/**
+	 * Refuses an HTML widget, layout HTML inside text, custom CSS and
+	 * inline styles unless the call's flags say the person asked for them.
+	 *
+	 * @return true|WP_Error
+	 */
+	protected function check_code( array $element, array $input, string $where = '' ) {
+		$type     = 'widget' === ( $element['elType'] ?? '' ) ? (string) ( $element['widgetType'] ?? '' ) : (string) ( $element['elType'] ?? '' );
+		$settings = isset( $element['settings'] ) && is_array( $element['settings'] ) ? $element['settings'] : array();
+		return RawHtml::check( $type, RawHtml::strings( $settings ), RawHtml::css_keys( array_keys( $settings ) ), $input, $where );
+	}
+
+	/**
+	 * Runs check_code() on an element and everything inside it.
+	 *
+	 * @return true|WP_Error
+	 */
+	protected function check_code_tree( array $element, array $input ) {
+		$problem = true;
+		Tree::walk(
+			array( $element ),
+			function ( $el, $path ) use ( &$problem, $input ) {
+				if ( true !== $problem ) {
+					return;
+				}
+				$where   = count( $path ) > 1 ? sprintf( 'nested element at %s', implode( '.', array_slice( $path, 1 ) ) ) : '';
+				$problem = $this->check_code( $el, $input, $where );
+			}
+		);
+		return $problem;
 	}
 
 	/**

@@ -112,6 +112,11 @@ Things with no module setting, and what to do instead:
 - **Pill buttons** (`border-radius: 999px`): `button_border_radius` "100px".
 - **Hover colours**: the same setting with `__hover` and
   `…__hover_enabled` "on|hover", as Home's buttons do.
+- **The tools enforce the rules.** A Code module, layout or embed tags
+  inside text, `style=""`, `<style>` and custom CSS settings are refused
+  unless the call sends `allow_raw_html: true` or `allow_inline_css: true`.
+  Send a flag only for a snippet the person asked for (an embed code, a
+  widget script), never to reproduce a design.
 - **Placeholder boxes** in the design (dashed "goes here" boxes): never
   build the box. Put the real thing in (the site's shortcode), or leave
   the section out and list it in your report.

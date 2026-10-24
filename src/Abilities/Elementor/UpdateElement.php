@@ -7,6 +7,7 @@
 
 namespace WPRoadie\Abilities\Elementor;
 
+use WPRoadie\Abilities\RawHtml;
 use WPRoadie\Abilities\Content\ContentHelper;
 use WPRoadie\Safety\Mode;
 
@@ -41,6 +42,8 @@ final class UpdateElement extends ElementorAbility {
 					'minProperties' => 1,
 					'description'   => __( 'Settings to change, e.g. {"title": "New heading"} or {"text": "Book now", "link": {"url": "https://example.com/book"}}. null removes a key.', 'wproadie' ),
 				),
+				'allow_raw_html'         => RawHtml::flags_schema()['allow_raw_html'],
+				'allow_inline_css'       => RawHtml::flags_schema()['allow_inline_css'],
 				'allow_unknown_settings' => array(
 					'type'        => 'boolean',
 					'default'     => false,
@@ -71,6 +74,15 @@ final class UpdateElement extends ElementorAbility {
 		}
 		$element  = $found['element'];
 		$settings = isset( $element['settings'] ) && is_array( $element['settings'] ) ? $element['settings'] : array();
+		// An existing HTML widget keeps its settings editable; new code in it, and new CSS anywhere, need the flags.
+		$type = 'widget' === ( $element['elType'] ?? '' ) ? (string) ( $element['widgetType'] ?? '' ) : (string) ( $element['elType'] ?? '' );
+		if ( 'html' === $type && ! array_key_exists( 'html', $changes ) ) {
+			$type = 'text-editor';
+		}
+		$code = RawHtml::check( $type, RawHtml::strings( $changes ), RawHtml::css_keys( array_keys( $changes ) ), $input );
+		if ( is_wp_error( $code ) ) {
+			return $code;
+		}
 		if ( empty( $input['allow_unknown_settings'] ) ) {
 			// Only the keys being set: a key already stored stays whatever it is.
 			$known = $this->check_settings( array_merge( $element, array( 'settings' => array_diff_key( $changes, $settings ) ) ) );

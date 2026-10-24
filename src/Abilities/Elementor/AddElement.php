@@ -7,6 +7,7 @@
 
 namespace WPRoadie\Abilities\Elementor;
 
+use WPRoadie\Abilities\RawHtml;
 use WPRoadie\Safety\Mode;
 
 defined( 'ABSPATH' ) || exit;
@@ -22,7 +23,7 @@ final class AddElement extends ElementorAbility {
 	}
 
 	public function description(): string {
-		return __( 'Adds a new element to an Elementor page. For one widget, send widget_type (e.g. "heading", "text-editor", "button", "image", "icon-list", "spacer") and its settings, e.g. {"title": "Opening hours", "header_size": "h2"}. For anything bigger (a container with widgets inside, a section with columns) send element as Elementor element JSON: {"elType": "container", "settings": {…}, "elements": [{"elType": "widget", "widgetType": "heading", "settings": {…}}]}. IDs are generated fresh. Settings keys the widget has no control for are refused, with the likely right key; elementor-get-widget-schema lists the keys each widget takes. Place it with parent_id (a container, column or section id from elementor-get-page; omit for the top level of the page) and position (0-based index among the parent\'s children; omit to add at the end). A widget sent to the top level is wrapped in a new container. Elementor\'s rules apply: widgets go in containers or columns, columns only in sections. Returns the new element ids, plus an undo_id; pass it to undo-change to remove it again.', 'wproadie' );
+		return __( 'Adds a new element to an Elementor page. For one widget, send widget_type (e.g. "heading", "text-editor", "button", "image", "icon-list", "spacer") and its settings, e.g. {"title": "Opening hours", "header_size": "h2"}. For anything bigger (a container with widgets inside, a section with columns) send element as Elementor element JSON: {"elType": "container", "settings": {…}, "elements": [{"elType": "widget", "widgetType": "heading", "settings": {…}}]}. IDs are generated fresh. An HTML widget, layout HTML inside text and custom or inline CSS are refused unless allow_raw_html / allow_inline_css say the person asked for them. Settings keys the widget has no control for are refused, with the likely right key; elementor-get-widget-schema lists the keys each widget takes. Place it with parent_id (a container, column or section id from elementor-get-page; omit for the top level of the page) and position (0-based index among the parent\'s children; omit to add at the end). A widget sent to the top level is wrapped in a new container. Elementor\'s rules apply: widgets go in containers or columns, columns only in sections. Returns the new element ids, plus an undo_id; pass it to undo-change to remove it again.', 'wproadie' );
 	}
 
 	public function risk(): string {
@@ -53,6 +54,8 @@ final class AddElement extends ElementorAbility {
 					'type'        => 'object',
 					'description' => __( 'A full Elementor element (elType, settings, elements, widgetType for widgets), for containers, sections or nested content.', 'wproadie' ),
 				),
+				'allow_raw_html'         => RawHtml::flags_schema()['allow_raw_html'],
+				'allow_inline_css'       => RawHtml::flags_schema()['allow_inline_css'],
 				'allow_unknown_settings' => array(
 					'type'        => 'boolean',
 					'default'     => false,
@@ -81,6 +84,10 @@ final class AddElement extends ElementorAbility {
 		$element = $this->parse_element( $raw );
 		if ( is_wp_error( $element ) ) {
 			return $element;
+		}
+		$code = $this->check_code_tree( $element, $input );
+		if ( is_wp_error( $code ) ) {
+			return $code;
 		}
 		if ( empty( $input['allow_unknown_settings'] ) ) {
 			$known = $this->check_settings_tree( $element );

@@ -40,13 +40,19 @@ content the Visual Builder saves. They work on both storage formats, Divi 4
    `heading` (Divi 5), `image`, `button`, `blurb`, `cta`, `testimonial`,
    `pricing_tables`, `gallery`, `video`, `contact_form`. A Code module is only
    for a snippet the person explicitly asked to embed (a form embed, a map, a
-   widget script).
+   widget script). The tools enforce this: a Code module, or layout and
+   embed tags inside text, are refused unless the call sends
+   `allow_raw_html: true`, which you send only for a snippet the person
+   asked for.
 2. **Never style with custom CSS.** No `<style>` blocks, no Code modules of
    CSS, no stylesheet files. Every visual property has a module setting:
    background, text colour, font, size, spacing, border, shadow, width. Set
    those with `divi-update-module`. If the same look is needed on many
    modules, that is a Divi preset or a global colour, set in the builder's
-   theme options by a person, not a stylesheet.
+   theme options by a person, not a stylesheet. The tools refuse
+   `style=""`, `<style>` and custom CSS settings unless the call sends
+   `allow_inline_css: true`, which you send only when the person asked for
+   CSS.
 3. **Keep the structure.** Section → row → column → module. Modules live in
    columns, never loose in a section or row. Rows define the column layout.
    Fullwidth sections take fullwidth modules only. A specialty section's own
