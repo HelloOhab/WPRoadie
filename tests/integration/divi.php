@@ -2476,3 +2476,93 @@ wproadie_test(
 		}
 	}
 );
+
+wproadie_test(
+	'divi: concurrent edits of one page cannot overwrite each other',
+	function () {
+		$id   = wp_insert_post(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Locked page',
+				'post_content' => '[et_pb_section][et_pb_row][et_pb_column type="4_4"][et_pb_text]One[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]',
+				'meta_input'   => array( '_et_pb_use_builder' => 'on' ),
+			)
+		);
+		$lock = \WPRoadie\Abilities\Content\PostLock::class;
+		try {
+			// The lock: taken once, refused while held, free again after release, stolen when stale.
+			wproadie_assert( $lock::acquire( $id, 0 ), 'first acquire' );
+			wproadie_assert( ! $lock::acquire( $id, 0 ), 'held lock refuses a second taker' );
+			$lock::release( $id );
+			wproadie_assert( $lock::acquire( $id, 0 ), 'free after release' );
+			$lock::release( $id );
+			update_option( $lock::PREFIX . $id, (string) ( time() - 120 ), false );
+			wproadie_assert( $lock::acquire( $id, 0 ), 'a stale lock from a dead call is taken over' );
+			$lock::release( $id );
+
+			// A write refuses when the page changed after the call read it.
+			$ability = new class() extends \WPRoadie\Abilities\Divi\DiviAbility {
+				public function slug(): string {
+					return 'divi-test-save';
+				}
+				public function label(): string {
+					return 'x';
+				}
+				public function description(): string {
+					return 'x';
+				}
+				public function risk(): string {
+					return \WPRoadie\Safety\Mode::RISK_WRITE;
+				}
+				protected function execute( array $input ) {
+					unset( $input );
+					return null;
+				}
+				public function save_for_test( \WP_Post $post, \WPRoadie\Abilities\Divi\Document $doc ) {
+					return $this->save( $post, $doc ); // phpcs:ignore -- A method of the anonymous class, not a closure.
+				}
+			};
+			$loaded  = \WPRoadie\Abilities\Divi\Divi::load( $id );
+			$loaded['doc']->find( array( 'path' => '0.0.0.0' ) )['node']->content = 'Two';
+			wp_update_post(
+				array(
+					'ID'           => $id,
+					'post_content' => str_replace( 'One', 'Someone else', $loaded['post']->post_content ),
+				)
+			);
+			$result = $ability->save_for_test( $loaded['post'], $loaded['doc'] );
+			wproadie_assert_error( $result, 'wproadie_divi_page_changed' );
+			wproadie_assert( false !== strpos( get_post( $id )->post_content, 'Someone else' ), 'the other change survived' );
+			wproadie_assert( false === get_option( $lock::PREFIX . $id ), 'lock released after the refusal' );
+
+			// A fresh read then writes fine, and leaves no lock behind.
+			$loaded = \WPRoadie\Abilities\Divi\Divi::load( $id );
+			$loaded['doc']->find( array( 'path' => '0.0.0.0' ) )['node']->content = 'Two';
+			$result = $ability->save_for_test( $loaded['post'], $loaded['doc'] );
+			wproadie_assert( ! is_wp_error( $result ) && $result['changed'], 'write after a fresh read: ' . ( is_wp_error( $result ) ? $result->get_error_message() : '' ) );
+			wproadie_assert( false !== strpos( get_post( $id )->post_content, 'Two' ), 'written' );
+			wproadie_assert( false === get_option( $lock::PREFIX . $id ), 'lock released after the write' );
+
+			// A held lock makes the tool wait, then refuse as busy.
+			wproadie_assert( $lock::acquire( $id, 0 ), 'hold' );
+			$started = microtime( true );
+			$busy    = wproadie_call(
+				'divi-update-module',
+				array(
+					'id'   => $id,
+					'path' => '0.0.0.0',
+					'set'  => array( 'content' => 'Three' ),
+				)
+			);
+			$lock::release( $id );
+			wproadie_assert_error( $busy, 'wproadie_divi_page_busy' );
+			wproadie_assert( microtime( true ) - $started >= 4, 'waited for the holder before refusing' );
+			wproadie_assert( false !== strpos( get_post( $id )->post_content, 'Two' ), 'nothing written while busy' );
+		} finally {
+			$lock::release( $id );
+			delete_option( $lock::PREFIX . $id );
+			wp_delete_post( $id, true );
+		}
+	}
+);
