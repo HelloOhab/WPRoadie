@@ -71,11 +71,11 @@ final class AuditSeo extends SeoAbility {
 	}
 
 	protected function execute( array $input ) {
-		$types = array_values( array_diff( ContentHelper::content_types(), array( 'attachment' ) ) );
+		$types = RankMath::indexable_post_types();
 		if ( ! empty( $input['post_type'] ) ) {
 			$type = (string) $input['post_type'];
-			if ( ! in_array( $type, $types, true ) ) {
-				return RankMath::error( 'bad_post_type', sprintf( 'Unknown or private post type "%s". Public types: %s.', $type, implode( ', ', $types ) ) );
+			if ( ! in_array( $type, ContentHelper::content_types(), true ) ) {
+				return RankMath::error( 'bad_post_type', sprintf( 'Unknown post type "%s". Audited by default: %s.', $type, implode( ', ', $types ) ) );
 			}
 			$types = array( $type );
 		}

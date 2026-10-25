@@ -59,7 +59,7 @@ final class GetSeo extends SeoAbility {
 			'rank_math' => array(
 				'version'         => RankMath::version(),
 				'pro'             => RankMath::pro_version(),
-				'variables_known' => RankMath::loaded(),
+				'variables_known' => RankMath::variables_ready(),
 			),
 		);
 	}

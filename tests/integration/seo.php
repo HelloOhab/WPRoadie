@@ -320,6 +320,49 @@ wproadie_test(
 );
 
 wproadie_test(
+	'seo: builder shortcodes never reach a description; the audit skips builder libraries',
+	function () {
+		$page = wp_insert_post(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Divi page',
+				'post_content' => '[et_pb_section fb_built="1" _builder_version="4.27.5"][et_pb_row][et_pb_column type="4_4"][et_pb_text]Youth sports mentoring in Knoxville, Tennessee.[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]',
+			)
+		);
+		try {
+			$effective = \WPRoadie\Abilities\Seo\RankMath::effective_post( get_post( $page ), array() );
+			wproadie_assert_same( 'Youth sports mentoring in Knoxville, Tennessee.', $effective['description'] );
+			wproadie_assert_same( 'Divi page - ' . get_bloginfo( 'name' ), $effective['title'] );
+			wproadie_assert_same( 'Hello there', \WPRoadie\Abilities\Seo\RankMath::strip_all_shortcodes( 'Hello [gallery ids="1"] there' ), 'registered shortcodes go too' );
+
+			register_post_type(
+				'et_pb_layout',
+				array(
+					'public'              => true,
+					'publicly_queryable'  => true,
+					'exclude_from_search' => true,
+				)
+			);
+			register_post_type(
+				'wproadie_hidden',
+				array(
+					'public'              => true,
+					'exclude_from_search' => true,
+				)
+			);
+			$types = \WPRoadie\Abilities\Seo\RankMath::indexable_post_types();
+			wproadie_assert( in_array( 'page', $types, true ) && in_array( 'post', $types, true ), 'posts and pages are audited' );
+			wproadie_assert( ! in_array( 'et_pb_layout', $types, true ) && ! in_array( 'wproadie_hidden', $types, true ) && ! in_array( 'attachment', $types, true ), 'libraries, unsearchable types and attachments are not: ' . implode( ',', $types ) );
+		} finally {
+			wp_delete_post( $page, true );
+			unregister_post_type( 'et_pb_layout' );
+			unregister_post_type( 'wproadie_hidden' );
+		}
+	}
+);
+
+wproadie_test(
 	'teardown: seo tools back to detecting Rank Math',
 	function () {
 		remove_filter( 'wproadie_seo_available', '__return_true' );

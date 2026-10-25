@@ -75,6 +75,25 @@ final class RankMath {
 		return (bool) apply_filters( 'wproadie_seo_available', $active );
 	}
 
+	/**
+	 * Post types worth auditing: public and searchable, not a builder's
+	 * library (Divi layouts, Elementor templates) or attachments. Any type
+	 * can still be audited by name.
+	 *
+	 * @return string[]
+	 */
+	public static function indexable_post_types(): array {
+		$skip  = array( 'attachment', 'et_pb_layout', 'et_header_layout', 'et_body_layout', 'et_footer_layout', 'et_template', 'et_theme_builder', 'et_code_snippet', 'elementor_library', 'e-landing-page', 'e-floating-buttons', 'wp_block', 'wp_navigation', 'wp_template', 'wp_template_part' );
+		$types = array();
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $type ) {
+			if ( in_array( $type->name, $skip, true ) || $type->exclude_from_search ) {
+				continue;
+			}
+			$types[] = $type->name;
+		}
+		return $types;
+	}
+
 	public static function unavailable_reason(): string {
 		return __( 'Rank Math SEO is not active on this site.', 'wproadie' );
 	}
@@ -424,14 +443,67 @@ final class RankMath {
 		if ( '' === $template ) {
 			return '';
 		}
-		if ( self::loaded() ) {
+		if ( self::variables_ready() ) {
 			try {
-				return (string) \RankMath\Helper::replace_vars( $template, $context );
+				$out = (string) \RankMath\Helper::replace_vars( $template, $context );
 			} catch ( Throwable $e ) {
 				return self::basic_vars( $template, $context );
 			}
+			// Anything Rank Math left (a variable it does not know in this
+			// request) is expanded or removed the way it would on the front end.
+			return preg_match( '/%[a-z_]+(\([^)]*\))?%/', $out ) ? self::basic_vars( $out, $context ) : $out;
 		}
 		return self::basic_vars( $template, $context );
+	}
+
+	/**
+	 * Whether Rank Math's variable replacer has been primed this request.
+	 *
+	 * @var bool
+	 */
+	private static $primed = false;
+
+	/**
+	 * Rank Math registers its %variables% on the front-end `wp` hook (or
+	 * admin_enqueue_scripts), which never fires in a REST or MCP request:
+	 * its replacer would then replace nothing, and cache that. Run its
+	 * (idempotent) setup once and clear the cache it may have filled.
+	 */
+	public static function variables_ready(): bool {
+		if ( ! self::loaded() ) {
+			return false;
+		}
+		if ( ! self::$primed ) {
+			self::$primed = true;
+			try {
+				$manager = rank_math()->variables ?? null;
+				if ( $manager && method_exists( $manager, 'setup' ) ) {
+					$manager->setup();
+				}
+				if ( class_exists( '\RankMath\Replace_Variables\Replacer' ) ) {
+					\RankMath\Replace_Variables\Replacer::$replacements_cache = array();
+				}
+			} catch ( Throwable $e ) {
+				return false;
+			}
+		}
+		try {
+			$manager = rank_math()->variables ?? null;
+			return $manager && method_exists( $manager, 'get_replacements' ) && (array) $manager->get_replacements();
+		} catch ( Throwable $e ) {
+			return false;
+		}
+	}
+
+	/**
+	 * Text with every shortcode removed, registered or not. In a REST
+	 * request Divi registers none of its shortcodes, so WordPress's
+	 * strip_shortcodes() would leave "[et_pb_section ...]" in a description;
+	 * on the front end the page shows the text inside them.
+	 */
+	public static function strip_all_shortcodes( string $text ): string {
+		$text = (string) preg_replace( '/\[\/?[a-zA-Z0-9_-]+(?:\s[^\]]*)?\]/s', ' ', $text );
+		return trim( (string) preg_replace( '/\s+/', ' ', wp_strip_all_tags( $text ) ) );
 	}
 
 	/**
@@ -454,7 +526,7 @@ final class RankMath {
 		);
 		if ( $context instanceof WP_Post ) {
 			$excerpt    = '' !== trim( (string) $context->post_excerpt ) ? $context->post_excerpt : $context->post_content;
-			$excerpt    = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( strip_shortcodes( (string) $excerpt ) ) ) );
+			$excerpt    = self::strip_all_shortcodes( (string) $excerpt );
 			$vars      += array(
 				'%title%'           => $context->post_title,
 				'%excerpt%'         => mb_substr( $excerpt, 0, self::DESCRIPTION_LENGTH ),
@@ -493,6 +565,12 @@ final class RankMath {
 	public static function effective_post( WP_Post $post, array $stored ): array {
 		$type   = $post->post_type;
 		$source = array();
+		if ( false !== strpos( $post->post_content, '[' ) || false !== strpos( $post->post_excerpt, '[' ) ) {
+			$clean               = clone $post;
+			$clean->post_content = self::strip_all_shortcodes( $post->post_content );
+			$clean->post_excerpt = self::strip_all_shortcodes( $post->post_excerpt );
+			$post                = $clean;
+		}
 
 		if ( isset( $stored['title'] ) ) {
 			$title           = self::replace_vars( $stored['title'], $post );
