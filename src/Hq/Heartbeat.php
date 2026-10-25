@@ -35,6 +35,63 @@ final class Heartbeat {
 		// Report mode, kill switch and tool changes within a minute.
 		add_action( 'update_option_' . Settings::OPTION, array( self::class, 'send_soon' ) );
 		add_action( 'add_option_' . Settings::OPTION, array( self::class, 'send_soon' ) );
+		// Hosts where WP-Cron does not fire (no traffic, cron disabled, a
+		// staging copy) would leave HQ with a stale picture: catch up after
+		// a request of our own instead.
+		add_action( 'shutdown', array( self::class, 'catch_up' ), 100 );
+	}
+
+	/** An hourly heartbeat this late is overdue. */
+	const OVERDUE_SECONDS = 70 * MINUTE_IN_SECONDS;
+	const CATCH_UP_LOCK   = 'wproadie_hq_catch_up';
+
+	/**
+	 * Whether a heartbeat should have gone out by now: a "soon" heartbeat
+	 * whose minute has passed, or an hourly one more than ten minutes late.
+	 */
+	public static function due(): bool {
+		if ( ! Connection::is_connected() || Connection::moved() ) {
+			return false;
+		}
+		$soon = wp_next_scheduled( self::SOON_HOOK );
+		if ( $soon && $soon <= time() ) {
+			return true;
+		}
+		$last = self::last_result();
+		$at   = $last ? (int) $last['at'] : 0;
+		return $at < time() - self::OVERDUE_SECONDS;
+	}
+
+	/**
+	 * Sends an overdue heartbeat at the end of a request, after the
+	 * response has gone out where PHP allows it (PHP-FPM), so the visitor
+	 * or tool never waits for HQ.
+	 *
+	 * @param bool $inline Send in this request whatever the environment (tests, WP-CLI).
+	 */
+	public static function catch_up( bool $inline = false ): void {
+		if ( wp_doing_cron() || ( defined( 'WP_INSTALLING' ) && WP_INSTALLING ) || ! self::due() ) {
+			return;
+		}
+		if ( get_transient( self::CATCH_UP_LOCK ) ) {
+			return;
+		}
+		if ( ! $inline ) {
+			if ( function_exists( 'fastcgi_finish_request' ) ) {
+				fastcgi_finish_request();
+			} elseif ( ! wp_is_json_request() && ! ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+				// Without FPM the send would delay a page view; a REST or MCP
+				// request (a tool call, a command from HQ) can afford it.
+				return;
+			}
+		}
+		set_transient( self::CATCH_UP_LOCK, 1, MINUTE_IN_SECONDS );
+		wp_clear_scheduled_hook( self::SOON_HOOK );
+		if ( wp_next_scheduled( self::CRON_HOOK ) ) {
+			wp_clear_scheduled_hook( self::CRON_HOOK );
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', self::CRON_HOOK );
+		}
+		self::send( null, 10 );
 	}
 
 	public static function ensure_scheduled(): void {

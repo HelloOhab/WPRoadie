@@ -803,6 +803,84 @@ wproadie_test(
 );
 
 wproadie_test(
+	'heartbeat catch-up: due when a "soon" minute has passed or the hourly one is late, sent at shutdown',
+	function () {
+		$sent = 0;
+		$fake = function ( $pre, $args, $url ) use ( &$sent ) {
+			unset( $pre, $args );
+			if ( false !== strpos( (string) $url, '/api/v1/heartbeat' ) ) {
+				++$sent;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => '{"ok":true}',
+				'response' => array(
+					'code'    => 200,
+					'message' => '',
+				),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $fake, 10, 3 );
+		$last = get_option( Heartbeat::LAST_RESULT );
+		try {
+			delete_transient( Heartbeat::CATCH_UP_LOCK );
+			wp_clear_scheduled_hook( Heartbeat::SOON_HOOK );
+			update_option(
+				Heartbeat::LAST_RESULT,
+				array(
+					'at'    => time(),
+					'ok'    => true,
+					'error' => null,
+				),
+				false
+			);
+			wproadie_assert( ! Heartbeat::due(), 'fresh heartbeat, nothing scheduled: not due' );
+
+			wp_schedule_single_event( time() + MINUTE_IN_SECONDS, Heartbeat::SOON_HOOK );
+			wproadie_assert( ! Heartbeat::due(), 'a soon heartbeat whose minute has not come: not due' );
+			wp_clear_scheduled_hook( Heartbeat::SOON_HOOK );
+			wp_schedule_single_event( time() - 5, Heartbeat::SOON_HOOK );
+			wproadie_assert( Heartbeat::due(), 'a soon heartbeat whose minute passed: due' );
+
+			Heartbeat::catch_up( true );
+			wproadie_assert_same( 1, $sent, 'catch-up sent the heartbeat' );
+			wproadie_assert( ! wp_next_scheduled( Heartbeat::SOON_HOOK ), 'and cleared the soon hook' );
+			wproadie_assert( ! Heartbeat::due(), 'not due right after' );
+
+			Heartbeat::catch_up( true );
+			wproadie_assert_same( 1, $sent, 'nothing to catch up: nothing sent' );
+
+			update_option(
+				Heartbeat::LAST_RESULT,
+				array(
+					'at'    => time() - 2 * HOUR_IN_SECONDS,
+					'ok'    => true,
+					'error' => null,
+				),
+				false
+			);
+			wproadie_assert( Heartbeat::due(), 'an hourly heartbeat two hours late: due' );
+			wproadie_assert( get_transient( Heartbeat::CATCH_UP_LOCK ), 'the lock from the first catch-up still holds' );
+			Heartbeat::catch_up( true );
+			wproadie_assert_same( 1, $sent, 'the lock stops a second send within the minute' );
+			delete_transient( Heartbeat::CATCH_UP_LOCK );
+			Heartbeat::catch_up( true );
+			wproadie_assert_same( 2, $sent, 'lock gone: the late heartbeat is sent' );
+		} finally {
+			remove_filter( 'pre_http_request', $fake, 10 );
+			delete_transient( Heartbeat::CATCH_UP_LOCK );
+			wp_clear_scheduled_hook( Heartbeat::SOON_HOOK );
+			if ( false === $last ) {
+				delete_option( Heartbeat::LAST_RESULT );
+			} else {
+				update_option( Heartbeat::LAST_RESULT, $last, false );
+			}
+		}
+	}
+);
+
+wproadie_test(
 	'heartbeat is signed and posted to HQ; a rejection is recorded',
 	function () {
 		$captured = array();

@@ -39,6 +39,7 @@ delete_option( 'wproadie_updates_seen' );
 delete_option( 'wproadie_version' );
 delete_metadata( 'user', 0, 'wproadie_hq_email', '', true );
 delete_transient( 'wproadie_hq_health' );
+delete_transient( 'wproadie_hq_catch_up' );
 delete_site_transient( 'wproadie_update_release' );
 
 // wp-content/wproadie is left in place: it may hold files the team wrote
