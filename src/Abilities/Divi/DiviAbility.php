@@ -14,6 +14,7 @@ use WP_Error;
 use WP_Post;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Abilities\Content\CreatePost;
+use WPRoadie\Abilities\Content\PostLock;
 use WPRoadie\Log\Undo;
 
 defined( 'ABSPATH' ) || exit;
@@ -190,6 +191,16 @@ abstract class DiviAbility extends AbilityBase {
 			return $checked;
 		}
 
+		// Serialize with other calls editing this page, and refuse to write
+		// over a change saved since this call read it.
+		if ( ! PostLock::acquire( (int) $post->ID ) ) {
+			return PostLock::busy_error( 'divi_page_', 'page' );
+		}
+		if ( PostLock::current_content( (int) $post->ID ) !== (string) $post->post_content ) {
+			PostLock::release( (int) $post->ID );
+			return PostLock::changed_error( 'divi_page_', 'page', 'divi-get-page' );
+		}
+
 		$undo = Undo::post( $post->ID );
 		$this->add_undo( $undo );
 
@@ -213,6 +224,7 @@ abstract class DiviAbility extends AbilityBase {
 				);
 			}
 			if ( 'on' !== get_post_meta( $post->ID, '_et_pb_use_builder', true ) ) {
+				PostLock::release( (int) $post->ID );
 				return Divi::error( 'builder_meta_blocked', __( 'The page could not be marked as a Divi Builder page (a plugin or filter blocks _et_pb_use_builder), so the content was not written: the builder would treat it as classic content.', 'wproadie' ), 409 );
 			}
 		}
@@ -226,6 +238,7 @@ abstract class DiviAbility extends AbilityBase {
 			),
 			true
 		);
+		PostLock::release( (int) $post->ID );
 		if ( is_wp_error( $updated ) ) {
 			return $updated;
 		}

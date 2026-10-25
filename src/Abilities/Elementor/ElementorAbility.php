@@ -14,6 +14,7 @@ use WP_Error;
 use WP_Post;
 use WPRoadie\Abilities\AbilityBase;
 use WPRoadie\Abilities\RawHtml;
+use WPRoadie\Abilities\Content\PostLock;
 use WPRoadie\Log\Undo;
 
 defined( 'ABSPATH' ) || exit;
@@ -82,8 +83,17 @@ abstract class ElementorAbility extends AbilityBase {
 		if ( is_wp_error( $tree ) ) {
 			return $tree;
 		}
+		$this->loaded_raw[ (int) $post->ID ] = ElementorHelper::raw_data( (int) $post->ID );
 		return array( $post, $tree );
 	}
+
+	/**
+	 * The stored Elementor data of each page as this call read it, to
+	 * notice a change saved in between.
+	 *
+	 * @var array<int, mixed>
+	 */
+	private $loaded_raw = array();
 
 	/**
 	 * Records undo for a page and writes its new tree.
@@ -97,6 +107,16 @@ abstract class ElementorAbility extends AbilityBase {
 			return $encoded;
 		}
 
+		// Serialize with other calls editing this page, and refuse to write
+		// over a change saved since this call read it.
+		if ( ! PostLock::acquire( (int) $post->ID ) ) {
+			return PostLock::busy_error( 'elementor_page_', 'page' );
+		}
+		if ( array_key_exists( (int) $post->ID, $this->loaded_raw ) && ElementorHelper::raw_data( (int) $post->ID ) !== $this->loaded_raw[ (int) $post->ID ] ) {
+			PostLock::release( (int) $post->ID );
+			return PostLock::changed_error( 'elementor_page_', 'page', 'elementor-get-page' );
+		}
+
 		$this->add_undo( Undo::meta( 'post', (int) $post->ID, ElementorHelper::DATA_KEY ) );
 		if ( ElementorHelper::syncs_plain_text() ) {
 			// The plain-text copy in post_content changes too; this also
@@ -105,6 +125,7 @@ abstract class ElementorAbility extends AbilityBase {
 		}
 
 		$saved = ElementorHelper::write_tree( (int) $post->ID, $tree );
+		PostLock::release( (int) $post->ID );
 		if ( is_wp_error( $saved ) ) {
 			return $saved;
 		}
