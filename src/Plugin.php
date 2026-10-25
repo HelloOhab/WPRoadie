@@ -42,7 +42,8 @@ final class Plugin {
 	/**
 	 * Registers hooks. Runs once, when the plugin file is loaded.
 	 */
-	const PRUNE_HOOK = 'wproadie_prune_log';
+	const VERSION_OPTION = 'wproadie_version';
+	const PRUNE_HOOK     = 'wproadie_prune_log';
 
 	public function boot(): void {
 		add_action( 'plugins_loaded', array( $this, 'maybe_upgrade' ) );
@@ -113,6 +114,13 @@ final class Plugin {
 	public function maybe_upgrade(): void {
 		if ( get_option( AuditLog::DB_VERSION_OPTION ) !== AuditLog::DB_VERSION ) {
 			AuditLog::install();
+		}
+		// A new plugin version (uploaded by hand, updated from wp-admin or by
+		// HQ) changes the tool list: tell HQ within a minute instead of at
+		// the next hourly heartbeat.
+		if ( get_option( self::VERSION_OPTION ) !== WPROADIE_VERSION ) {
+			update_option( self::VERSION_OPTION, WPROADIE_VERSION, false );
+			\WPRoadie\Hq\Heartbeat::send_soon();
 		}
 		if ( ! wp_next_scheduled( self::PRUNE_HOOK ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::PRUNE_HOOK );
