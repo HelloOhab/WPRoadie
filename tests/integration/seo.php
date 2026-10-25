@@ -336,8 +336,21 @@ wproadie_test(
 			wproadie_assert_same( 'Divi page - ' . get_bloginfo( 'name' ), $effective['title'] );
 			wproadie_assert_same( 'Hello there', \WPRoadie\Abilities\Seo\RankMath::strip_all_shortcodes( 'Hello [gallery ids="1"] there' ), 'registered shortcodes go too' );
 
-			register_post_type( 'et_pb_layout', array( 'public' => true, 'publicly_queryable' => true, 'exclude_from_search' => true ) );
-			register_post_type( 'wproadie_hidden', array( 'public' => true, 'exclude_from_search' => true ) );
+			register_post_type(
+				'et_pb_layout',
+				array(
+					'public'              => true,
+					'publicly_queryable'  => true,
+					'exclude_from_search' => true,
+				)
+			);
+			register_post_type(
+				'wproadie_hidden',
+				array(
+					'public'              => true,
+					'exclude_from_search' => true,
+				)
+			);
 			$types = \WPRoadie\Abilities\Seo\RankMath::indexable_post_types();
 			wproadie_assert( in_array( 'page', $types, true ) && in_array( 'post', $types, true ), 'posts and pages are audited' );
 			wproadie_assert( ! in_array( 'et_pb_layout', $types, true ) && ! in_array( 'wproadie_hidden', $types, true ) && ! in_array( 'attachment', $types, true ), 'libraries, unsearchable types and attachments are not: ' . implode( ',', $types ) );
