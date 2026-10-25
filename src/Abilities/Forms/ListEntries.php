@@ -44,10 +44,15 @@ final class ListEntries extends FormsAbility {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'form_id' => array(
+				'id'      => array(
 					'type'        => 'integer',
 					'minimum'     => 1,
 					'description' => __( 'Form ID from forms-list.', 'wproadie' ),
+				),
+				'form_id' => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => __( 'Same as id (older name).', 'wproadie' ),
 				),
 				'number'  => array(
 					'type'    => 'integer',
@@ -71,13 +76,16 @@ final class ListEntries extends FormsAbility {
 					'description' => __( 'Only entries containing this text in a field value.', 'wproadie' ),
 				),
 			),
-			'required'             => array( 'form_id' ),
 			'additionalProperties' => false,
 		);
 	}
 
 	protected function execute( array $input ) {
-		$post = WPForms::post( (int) $input['form_id'] );
+		$form_id = (int) ( $input['id'] ?? $input['form_id'] ?? 0 );
+		if ( $form_id < 1 ) {
+			return WPForms::error( 'missing_id', __( 'Give id: the form ID from forms-list.', 'wproadie' ) );
+		}
+		$post = WPForms::post( $form_id );
 		if ( is_wp_error( $post ) ) {
 			return $post;
 		}
@@ -123,8 +131,9 @@ final class ListEntries extends FormsAbility {
 				if ( ! is_array( $field ) ) {
 					continue;
 				}
-				$label            = $labels[ (string) $id ] ?? (string) ( $field['name'] ?? $id );
-				$values[ $label ] = is_scalar( $field['value'] ?? null ) ? (string) $field['value'] : ( $field['value'] ?? '' );
+				$label = $labels[ (string) $id ] ?? (string) ( $field['name'] ?? $id );
+				// WPForms stores values HTML-escaped ("&#36;10.00"); give the text back.
+				$values[ $label ] = is_scalar( $field['value'] ?? null ) ? html_entity_decode( (string) $field['value'], ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : ( $field['value'] ?? '' );
 			}
 			$out[] = array(
 				'id'      => (int) ( $entry->entry_id ?? 0 ),
