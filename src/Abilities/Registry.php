@@ -96,6 +96,14 @@ final class Registry {
 		Divi\InsertLayout::class,
 		Divi\ListThemeBuilder::class,
 		Divi\ClearCache::class,
+		Seo\GetSeo::class,
+		Seo\UpdateSeo::class,
+		Seo\GetSeoSettings::class,
+		Seo\AuditSeo::class,
+		Forms\ListForms::class,
+		Forms\GetForm::class,
+		Forms\UpdateForm::class,
+		Forms\ListEntries::class,
 
 		// Settings (write).
 		Settings\GetOptions::class,
