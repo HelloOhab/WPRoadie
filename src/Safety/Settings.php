@@ -44,6 +44,15 @@ final class Settings {
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
 		),
+		// Offered only while Rank Math / WPForms are active.
+		'seo'            => array(
+			'risk'    => Mode::RISK_WRITE,
+			'default' => true,
+		),
+		'forms'          => array(
+			'risk'    => Mode::RISK_WRITE,
+			'default' => true,
+		),
 		'settings'       => array(
 			'risk'    => Mode::RISK_WRITE,
 			'default' => true,
@@ -87,6 +96,8 @@ final class Settings {
 			'navigation'     => __( 'Navigation', 'wproadie' ),
 			'elementor'      => __( 'Elementor', 'wproadie' ),
 			'divi'           => __( 'Divi', 'wproadie' ),
+			'seo'            => __( 'SEO (Rank Math)', 'wproadie' ),
+			'forms'          => __( 'Forms (WPForms)', 'wproadie' ),
 			'settings'       => __( 'Settings', 'wproadie' ),
 			'extensions'     => __( 'Plugins & themes', 'wproadie' ),
 			'users'          => __( 'Users', 'wproadie' ),
